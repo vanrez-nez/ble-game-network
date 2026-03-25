@@ -2,56 +2,119 @@
 
 ## Project
 
-BLE networking for LÖVE with:
+This repo contains a BLE communication layer for LÖVE.
 
-- native BLE bridge code in the external vendor repos:
+BLE means Bluetooth Low Energy: short-range wireless communication between nearby devices without relying on the internet.
+
+In a game, you use it to host nearby rooms, discover them, join sessions, and exchange gameplay messages through `lua/ble_net` on top of patched native LÖVE builds.
+
+It includes:
+
+- native BLE bridge work in the external vendor repos:
   - `love`
   - `love-android`
-- reusable Lua communication layer in `lua/ble_net`
-- example demo projects:
+- reusable Lua-side integration code in `lua/ble_net`
+- demo projects used to test and package the current implementation:
   - `demo-chat`
   - `demo-tictactoe`
 
-This is a generic game communication layer, not a chat-only project. The demos are examples and test apps. The intended integration surface for other games is:
-
-1. patched native LÖVE builds
-2. `lua/ble_net`
-
 ## How To Use
 
-For development:
+### Simple API
 
-1. Apply the native BLE patches once to the vendor repos:
+Lua-side controller:
+
+```lua
+local ble_net = require("ble_net")
+
+local network = ble_net.new({
+  title = "My Game",
+  room_name = "Room",
+  max_clients = 4,
+})
+
+network.initialize()
+network.update()
+network.start_host(ble_net.TRANSPORT.RELIABLE)
+network.start_scan()
+network.join_room(room_id, room_name)
+network.leave_session()
+network.broadcast_payload("event_name", payload)
+network.send_payload(peer_id, "event_name", payload)
+network.set_event_handler(function(ev, net, state)
+  -- game-specific event handling
+end)
+```
+
+Useful controller state:
+
+- `network.state.rooms`
+- `network.state.peers`
+- `network.state.session_id`
+- `network.state.in_session`
+- `network.state.is_host`
+- `network.state.local_id`
+- `network.state.status`
+- `network.state.diagnostics`
+
+Underlying native `love.ble` surface used by `ble_net`:
+
+```lua
+love.ble.state()
+love.ble.host(options)
+love.ble.scan()
+love.ble.join(room_id)
+love.ble.leave()
+love.ble.broadcast(msg_type, payload)
+love.ble.send(peer_id, msg_type, payload)
+love.ble.poll()
+love.ble.local_id()
+love.ble.is_host()
+love.ble.peers()
+```
+
+Main event types returned through polling / `ble_net`:
+
+- `room_found`
+- `room_lost`
+- `hosted`
+- `joined`
+- `peer_joined`
+- `peer_left`
+- `message`
+- `session_migrating`
+- `session_resumed`
+- `session_ended`
+- `radio`
+- `error`
+- `diagnostic`
+
+## How To Build And Install
+
+### Vendor Setup
+
+Apply the native BLE patches to the vendor repos:
 
 ```bash
 ./scripts/apply-vendor-patches.sh
 ```
 
-2. Keep developing normally in:
-   - `love`
-   - `love-android`
-   - `lua/ble_net`
-   - the demo projects
+Normal native development happens in:
 
-3. When Android native engine files change in `love`, sync the vendored Android engine copy:
+- `love`
+- `love-android`
+
+When Android native engine files change in `love`, sync the vendored Android engine copy:
 
 ```bash
 ./scripts/sync-android-vendor-love.sh
 ```
 
-4. When you want to freeze the current native state back into patch files:
+When you want to freeze the current native state back into patch files:
 
 ```bash
 ./scripts/export-vendor-patches.sh
 ```
-
-For downstream use in another game:
-
-1. start from patched native builds
-2. copy or vendor `lua/ble_net`
-3. use one of the demo projects as a reference, not as the required UI
-
-## How To Build And Install
 
 ### iOS
 
