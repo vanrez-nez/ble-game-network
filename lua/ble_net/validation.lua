@@ -2,6 +2,12 @@ local config = require("ble_net.config")
 
 local M = {}
 
+local limits = config.limits
+
+function M.set_limits(resolved)
+  limits = resolved
+end
+
 local function trim(value)
   return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -34,7 +40,7 @@ function M.room_name(value)
     return nil, reason
   end
 
-  if #normalized > config.limits.room_name_length then
+  if #normalized > limits.room_name_length then
     return nil, "too_long"
   end
 
@@ -65,7 +71,7 @@ function M.max_clients(value)
   end
 
   local integer = math.floor(number)
-  if integer < config.limits.min_clients or integer > config.limits.max_clients then
+  if integer < limits.min_clients or integer > limits.max_clients then
     return nil, "out_of_range"
   end
 
@@ -86,7 +92,7 @@ function M.text_payload(value)
     return nil, reason
   end
 
-  if #normalized > config.limits.text_payload_length then
+  if #normalized > limits.text_payload_length then
     return nil, "too_long"
   end
 

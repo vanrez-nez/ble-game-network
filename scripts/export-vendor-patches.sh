@@ -3,6 +3,8 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+TMPDIR_CLEANUP="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_CLEANUP"' EXIT
 
 LOVE_DIR="$ROOT_DIR/love"
 LOVE_ANDROID_DIR="$ROOT_DIR/love-android"
@@ -25,8 +27,9 @@ git -C "$LOVE_DIR" diff -- \
 	src/modules/ble \
 	> "$ROOT_DIR/patches/love/0001-add-ble-module.patch"
 
-git -C "$LOVE_DIR" diff -- platform/xcode/love.xcodeproj/project.pbxproj > /tmp/love-ios-project.diff
-awk 'BEGIN{stop=0} /^@@ -326,13 \+330,14 @@/{stop=1} !stop {print}' /tmp/love-ios-project.diff >> "$ROOT_DIR/patches/love/0001-add-ble-module.patch"
+git -C "$LOVE_DIR" diff -- platform/xcode/love.xcodeproj/project.pbxproj > "$TMPDIR_CLEANUP/love-ios-project.diff"
+# Include only the first 3 BLE-related hunks; later hunks are unrelated build settings.
+awk 'BEGIN{n=0} /^@@ /{n++; if(n>3) exit} {print}' "$TMPDIR_CLEANUP/love-ios-project.diff" >> "$ROOT_DIR/patches/love/0001-add-ble-module.patch"
 
 git -C "$LOVE_ANDROID_DIR" diff -- \
 	app/src/main/AndroidManifest.xml \
@@ -46,8 +49,9 @@ git -C "$LOVE_ANDROID_VENDOR_DIR" diff -- \
 	src/modules/ble \
 	> "$ROOT_DIR/patches/love-android-vendor-love/0001-add-ble-module.patch"
 
-git -C "$LOVE_ANDROID_VENDOR_DIR" diff -- platform/xcode/love.xcodeproj/project.pbxproj > /tmp/love-android-vendor-ios-project.diff
-awk 'BEGIN{stop=0} /^@@ -326,13 \+330,14 @@/{stop=1} !stop {print}' /tmp/love-android-vendor-ios-project.diff >> "$ROOT_DIR/patches/love-android-vendor-love/0001-add-ble-module.patch"
+git -C "$LOVE_ANDROID_VENDOR_DIR" diff -- platform/xcode/love.xcodeproj/project.pbxproj > "$TMPDIR_CLEANUP/love-android-vendor-ios-project.diff"
+# Include only the first 3 BLE-related hunks; later hunks are unrelated build settings.
+awk 'BEGIN{n=0} /^@@ /{n++; if(n>3) exit} {print}' "$TMPDIR_CLEANUP/love-android-vendor-ios-project.diff" >> "$ROOT_DIR/patches/love-android-vendor-love/0001-add-ble-module.patch"
 
 echo "exported vendor BLE patches"
 

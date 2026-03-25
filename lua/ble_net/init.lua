@@ -3,8 +3,12 @@ local config = require("ble_net.config")
 local dedup = require("ble_net.dedup")
 local validation = require("ble_net.validation")
 
+local transport = {}
+for k, v in pairs(ble.TRANSPORT) do transport[k] = v end
+transport.NORMAL = ble.TRANSPORT.RELIABLE
+
 local M = {
-  TRANSPORT = ble.TRANSPORT,
+  TRANSPORT = transport,
   config = config,
   dedup = dedup,
   validation = validation,
@@ -38,6 +42,7 @@ function M.new(opts)
   local debug_enabled = settings.defaults.debug_enabled
   local limits = settings.limits
   local windows = settings.windows
+  validation.set_limits(limits)
   local event_handler = nil
   local notice_dedup = dedup.new({
     max_age = windows.notice_dedup_seconds,
@@ -69,7 +74,7 @@ function M.new(opts)
     if value == ble.TRANSPORT.RESILIENT then
       return "Resilient"
     end
-    return "Reliable"
+    return "Normal"
   end
 
   function self.address_text()
@@ -214,10 +219,6 @@ function M.new(opts)
     self.push_notice("Returned to idle")
   end
 
-  function self.broadcast(msg_type, payload)
-    return ble.broadcast(msg_type, payload)
-  end
-
   function self.broadcast_payload(msg_type, payload)
     return ble.broadcast(msg_type, payload)
   end
@@ -239,7 +240,7 @@ function M.new(opts)
       return false, value
     end
 
-    self.broadcast("chat", {
+    self.broadcast_payload("chat", {
       text = value,
     })
 
@@ -307,15 +308,21 @@ function M.new(opts)
 
     elseif ev.type == "message" then
       if ev.msg_type == "chat" then
-      local text = ev.payload and ev.payload.text or "<non-text payload>"
-      self.push_message(ev.peer_id, text, "remote")
+        local text = ev.payload and ev.payload.text or "<non-text payload>"
+        self.push_message(ev.peer_id, text, "remote")
       end
 
     elseif ev.type == "session_migrating" then
+      state.in_session = true
       self.push_notice("Migrating to " .. ev.new_host_id .. "...")
 
     elseif ev.type == "session_resumed" then
+      state.in_session = true
+      state.session_id = ev.session_id or state.session_id
       set_roster(ev.peers)
+      if state.local_id ~= "" then
+        state.is_host = ev.new_host_id == state.local_id
+      end
       self.push_notice("Session resumed on " .. ev.new_host_id)
 
     elseif ev.type == "session_ended" then
@@ -332,11 +339,11 @@ function M.new(opts)
       self.push_diagnostic(ev.platform, ev.message)
     end
 
+    self.refresh_live_state()
+
     if event_handler then
       event_handler(ev, self, state)
     end
-
-    self.refresh_live_state()
   end
 
   function self.update()

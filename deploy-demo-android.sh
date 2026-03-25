@@ -71,14 +71,16 @@ package_demo_archives() {
 
     echo "Packaging $demo_name as $archive_path..."
     rm -rf "$archive_root"
-    mkdir -p "$archive_root/ble_net"
+    mkdir -p "$archive_root/ble_net" "$archive_root/ble_ui"
 
     if command -v rsync >/dev/null 2>&1; then
-      rsync -a --delete "$demo_dir"/ "$archive_root"/
-      rsync -a --delete "$LUA_DIR/ble_net"/ "$archive_root/ble_net"/
+      rsync -a --delete --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$demo_dir"/ "$archive_root"/
+      rsync -a --delete --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$LUA_DIR/ble_net"/ "$archive_root/ble_net"/
+      rsync -a --delete --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$LUA_DIR/ble_ui"/ "$archive_root/ble_ui"/
     else
       cp -R "$demo_dir"/. "$archive_root"/
       cp -R "$LUA_DIR/ble_net"/. "$archive_root/ble_net"/
+      cp -R "$LUA_DIR/ble_ui"/. "$archive_root/ble_ui"/
     fi
 
     (
@@ -150,6 +152,59 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+select_device() {
+  if ! command -v adb >/dev/null 2>&1; then
+    echo "error: adb was not found in PATH" >&2
+    exit 1
+  fi
+
+  local devices=()
+  local labels=()
+  local line id state model
+
+  while IFS= read -r line; do
+    id="${line%%[[:space:]]*}"
+    [[ -z "$id" ]] && continue
+    state="$(echo "$line" | awk '{print $2}')"
+    [[ "$state" != "device" ]] && continue
+    model="$(echo "$line" | grep -o 'model:[^ ]*' | cut -d: -f2)"
+    devices+=("$id")
+    labels+=("${model:-unknown}  ($id)")
+  done < <(adb devices -l 2>/dev/null | tail -n +2)
+
+  if [[ "${#devices[@]}" -eq 0 ]]; then
+    echo "error: no adb devices connected" >&2
+    exit 1
+  fi
+
+  if [[ "${#devices[@]}" -eq 1 ]]; then
+    DEVICE_SERIAL="${devices[0]}"
+    echo "Using device: ${labels[0]}"
+    return
+  fi
+
+  echo "Multiple devices found:"
+  for i in "${!labels[@]}"; do
+    echo "  $((i + 1))) ${labels[$i]}"
+  done
+
+  local choice
+  while true; do
+    printf "Select device [1-%d]: " "${#devices[@]}"
+    read -r choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#devices[@]} )); then
+      DEVICE_SERIAL="${devices[$((choice - 1))]}"
+      echo "Using device: ${labels[$((choice - 1))]}"
+      return
+    fi
+    echo "Invalid choice."
+  done
+}
+
+if [[ -z "$DEVICE_SERIAL" && "$INSTALL_APK" -eq 1 ]]; then
+  select_device
+fi
+
 ADB_CMD=(adb)
 if [[ -n "$DEVICE_SERIAL" ]]; then
   ADB_CMD+=(-s "$DEVICE_SERIAL")
@@ -196,17 +251,19 @@ fi
 
 package_demo_archives
 
-echo "Syncing engine sources into love-android..."
-if command -v rsync >/dev/null 2>&1; then
-  rsync -r --delete --exclude '.git' "$LOVE_DIR"/ "$ANDROID_LOVE_DIR"/
-else
-  echo "error: rsync is required to sync the engine sources for Android builds" >&2
-  exit 1
-fi
-
 if [[ "$CLEAN_NATIVE" -eq 1 ]]; then
+  echo "Syncing engine sources into love-android..."
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -r --delete --exclude '.git' --exclude '.DS_Store' --exclude 'build/' --exclude '.cxx' --exclude '*.o' "$LOVE_DIR"/ "$ANDROID_LOVE_DIR"/
+  else
+    echo "error: rsync is required to sync the engine sources for Android builds" >&2
+    exit 1
+  fi
+
   echo "Clearing stale native build outputs..."
   rm -rf "$ANDROID_DIR/app/.cxx"
+else
+  echo "Reusing cached engine sources and native outputs (--no-clean)"
 fi
 
 VARIANT="Normal${RECORDING}${BUILD_TYPE}"

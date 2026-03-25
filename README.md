@@ -8,6 +8,17 @@ BLE means Bluetooth Low Energy: short-range wireless communication between nearb
 
 In a game, you use it to host nearby rooms, discover them, join sessions, and exchange gameplay messages through `lua/ble_net` on top of patched native LÖVE builds.
 
+Transport modes:
+
+- `Normal`: one host, multiple clients. Messages go through the host. If the host leaves or disappears, the session ends.
+- `Resilient`: if the host disconnects unexpectedly, the remaining peers elect a deterministic successor, reconnect under the same session id, and continue if recovery succeeds.
+
+Recovery notes:
+
+- `Normal` keeps the current stable behavior.
+- `Resilient` needs at least one other peer still connected to recover.
+- the transport restores the session; each game is responsible for re-broadcasting its shared state after resume.
+
 It includes:
 
 - native BLE bridge work in the external vendor repos:
@@ -35,7 +46,7 @@ local network = ble_net.new({
 
 network.initialize()
 network.update()
-network.start_host(ble_net.TRANSPORT.RELIABLE)
+network.start_host(ble_net.TRANSPORT.NORMAL)
 network.start_scan()
 network.join_room(room_id, room_name)
 network.leave_session()
@@ -72,6 +83,8 @@ love.ble.local_id()
 love.ble.is_host()
 love.ble.peers()
 ```
+
+`ble_net.TRANSPORT.NORMAL` maps to the current native reliable mode. `ble_net.TRANSPORT.RELIABLE` still exists as a compatibility alias.
 
 Main event types returned through polling / `ble_net`:
 
