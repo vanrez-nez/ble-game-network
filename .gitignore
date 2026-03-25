@@ -1,0 +1,8 @@
+.DS_Store
+.build/
+
+# External nested repositories
+/love/
+/love-android/
+/love-apple-dependencies/
+/bitchat/
