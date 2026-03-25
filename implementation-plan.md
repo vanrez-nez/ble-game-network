@@ -1,6 +1,6 @@
 # BLE Implementation Plan
 
-This document turns [specification.md](/Users/vanrez/Documents/game-dev/ble-game-network/specification.md) into a concrete implementation plan across the cloned LÖVE repositories in this workspace.
+This document turns [specification.md](specification.md) into a concrete implementation plan across the cloned LÖVE repositories in this workspace.
 
 ## Scope
 
@@ -602,7 +602,7 @@ Manual tests required:
 
 ## Demo Target
 
-The demo app in [demo-chat](/Users/vanrez/Documents/game-dev/ble-game-network/demo-chat) is the vertical slice target.
+The demo app in [demo-chat](demo-chat) is the vertical slice target.
 
 Definition of done for the demo:
 

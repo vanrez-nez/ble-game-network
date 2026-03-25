@@ -11,9 +11,9 @@ mock backend anymore.
 love demo-chat
 ```
 
-For Android deployment, use [deploy-demo-android.sh](/Users/vanrez/Documents/game-dev/ble-game-network/deploy-demo-android.sh) from the repo root.
+For Android deployment, use [deploy-demo-android.sh](../deploy-demo-android.sh) from the repo root.
 
-For iOS deployment, use [deploy-demo-ios.sh](/Users/vanrez/Documents/game-dev/ble-game-network/deploy-demo-ios.sh) from the repo root.
+For iOS deployment, use [deploy-demo-ios.sh](../deploy-demo-ios.sh) from the repo root.
 
 ## Controls
 

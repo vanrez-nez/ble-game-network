@@ -4,15 +4,15 @@ Experimental BLE networking support for LÖVE, with native engine changes for iO
 
 ## Current Repo Shape
 
-- [love](/Users/vanrez/Documents/game-dev/ble-game-network/love)
+- [love](love)
   - upstream LÖVE engine repo with BLE bridge changes
-- [love-android](/Users/vanrez/Documents/game-dev/ble-game-network/love-android)
+- [love-android](love-android)
   - upstream LOVE Android repo with BLE bridge changes
-- [demo-chat](/Users/vanrez/Documents/game-dev/ble-game-network/demo-chat)
+- [demo-chat](demo-chat)
   - example `.love` project used to exercise the BLE API
-- [deploy-demo-ios.sh](/Users/vanrez/Documents/game-dev/ble-game-network/deploy-demo-ios.sh)
+- [deploy-demo-ios.sh](deploy-demo-ios.sh)
   - packages and deploys the demo to iOS
-- [deploy-demo-android.sh](/Users/vanrez/Documents/game-dev/ble-game-network/deploy-demo-android.sh)
+- [deploy-demo-android.sh](deploy-demo-android.sh)
   - packages and deploys the demo to Android
 
 ## Intended Direction
@@ -22,9 +22,9 @@ The repo should evolve toward three layers:
 1. Native BLE engine patches
    - minimal BLE-only diffs on top of upstream `love` and `love-android`
 2. Reusable Lua integration package
-   - future home: [lua/ble_net](/Users/vanrez/Documents/game-dev/ble-game-network/lua/ble_net)
+   - future home: [lua/ble_net](lua/ble_net)
 3. Example projects
-   - keep [demo-chat](/Users/vanrez/Documents/game-dev/ble-game-network/demo-chat) as a consumer/example
+   - keep [demo-chat](demo-chat) as a consumer/example
 
 ## Integration Path
 
@@ -36,9 +36,9 @@ The intended integration path for downstream users is:
 
 Detailed docs:
 
-- [Target Repo Structure](/Users/vanrez/Documents/game-dev/ble-game-network/docs/repo-structure.md)
-- [Integration Guide](/Users/vanrez/Documents/game-dev/ble-game-network/docs/integration.md)
-- [Migration Plan](/Users/vanrez/Documents/game-dev/ble-game-network/docs/migration-plan.md)
+- [Target Repo Structure](docs/repo-structure.md)
+- [Integration Guide](docs/integration.md)
+- [Migration Plan](docs/migration-plan.md)
 
 ## Upstream Tracking
 

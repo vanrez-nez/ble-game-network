@@ -30,9 +30,9 @@ Tasks:
 - define migration steps before moving code
 
 Deliverables:
-- [README.md](/Users/vanrez/Documents/game-dev/ble-game-network/README.md)
-- [docs/repo-structure.md](/Users/vanrez/Documents/game-dev/ble-game-network/docs/repo-structure.md)
-- [docs/integration.md](/Users/vanrez/Documents/game-dev/ble-game-network/docs/integration.md)
+- [README.md](../README.md)
+- [docs/repo-structure.md](repo-structure.md)
+- [docs/integration.md](integration.md)
 
 ## Phase 2: Extract Reusable Lua Logic
 
