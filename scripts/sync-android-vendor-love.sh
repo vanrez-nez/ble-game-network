@@ -9,7 +9,7 @@ DST="$ROOT_DIR/love-android/app/src/main/cpp/love"
 
 for repo in "$SRC" "$DST"
 do
-	if [ ! -d "$repo/.git" ]; then
+	if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
 		echo "error: missing git repo at $repo" >&2
 		exit 1
 	fi
@@ -35,4 +35,3 @@ rm -rf "$DST/src/modules/ble"
 cp -R "$SRC/src/modules/ble" "$DST/src/modules/ble"
 
 echo "synced BLE engine files into love-android vendored love"
-

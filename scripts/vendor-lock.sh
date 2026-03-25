@@ -13,4 +13,3 @@ LOVE_ANDROID_PATCH_PATH="patches/love-android/0001-add-android-ble-bridge.patch"
 LOVE_ANDROID_VENDOR_REPO_URL="https://github.com/love2d/love.git"
 LOVE_ANDROID_VENDOR_BASE_COMMIT="5670df13b6980afd025cd7e7d442a24499bf86a7"
 LOVE_ANDROID_VENDOR_PATCH_PATH="patches/love-android-vendor-love/0001-add-ble-module.patch"
-

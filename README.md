@@ -1,50 +1,92 @@
 # BLE Game Network
 
-Experimental BLE networking support for LÖVE, with native engine changes for iOS and Android and a Lua demo app.
+## Project
 
-## Current Repo Shape
+BLE networking for LÖVE with:
 
-- [love](love)
-  - upstream LÖVE engine repo with BLE bridge changes
-- [love-android](love-android)
-  - upstream LOVE Android repo with BLE bridge changes
-- [demo-chat](demo-chat)
-  - example `.love` project used to exercise the BLE API
-- [deploy-demo-ios.sh](deploy-demo-ios.sh)
-  - packages and deploys the demo to iOS
-- [deploy-demo-android.sh](deploy-demo-android.sh)
-  - packages and deploys the demo to Android
+- native BLE bridge code in the external vendor repos:
+  - `love`
+  - `love-android`
+- reusable Lua communication layer in `lua/ble_net`
+- example demo projects:
+  - `demo-chat`
+  - `demo-tictactoe`
 
-## Intended Direction
+This is a generic game communication layer, not a chat-only project. The demos are examples and test apps. The intended integration surface for other games is:
 
-The repo should evolve toward three layers:
+1. patched native LÖVE builds
+2. `lua/ble_net`
 
-1. Native BLE engine patches
-   - minimal BLE-only diffs on top of upstream `love` and `love-android`
-2. Reusable Lua integration package
-   - future home: [lua/ble_net](lua/ble_net)
-3. Example projects
-   - keep [demo-chat](demo-chat) as a consumer/example
+## How To Use
 
-## Integration Path
+For development:
 
-The intended integration path for downstream users is:
+1. Apply the native BLE patches once to the vendor repos:
 
-1. Use a patched native LÖVE build that includes the BLE bridge.
-2. Copy or vendor the reusable Lua package from `lua/ble_net`.
-3. Use an example project as the starting point, not the demo UI itself.
+```bash
+./scripts/apply-vendor-patches.sh
+```
 
-Detailed docs:
+2. Keep developing normally in:
+   - `love`
+   - `love-android`
+   - `lua/ble_net`
+   - the demo projects
 
-- [Target Repo Structure](docs/repo-structure.md)
-- [Integration Guide](docs/integration.md)
-- [Migration Plan](docs/migration-plan.md)
+3. When Android native engine files change in `love`, sync the vendored Android engine copy:
 
-## Upstream Tracking
+```bash
+./scripts/sync-android-vendor-love.sh
+```
 
-Both native codebases currently track upstream directly:
+4. When you want to freeze the current native state back into patch files:
 
-- `love` origin: `https://github.com/love2d/love.git`
-- `love-android` origin: `https://github.com/love2d/love-android.git`
+```bash
+./scripts/export-vendor-patches.sh
+```
 
-The goal is to keep BLE-only native diffs isolated so later upstream pulls remain manageable.
+For downstream use in another game:
+
+1. start from patched native builds
+2. copy or vendor `lua/ble_net`
+3. use one of the demo projects as a reference, not as the required UI
+
+## How To Build And Install
+
+### iOS
+
+Build and deploy the current demos to iOS:
+
+```bash
+./deploy-demo-ios.sh --device <DEVICE_ID>
+```
+
+The script:
+
+- builds the `love-ios` app
+- packages every `demo-*` project as a `.love`
+- copies those demos into the app Documents folder
+- lets the LOVE project selector choose which demo to run
+
+### Android
+
+Build and deploy the current demos to Android:
+
+```bash
+./deploy-demo-android.sh --serial <SERIAL>
+```
+
+The script:
+
+- builds the Android LOVE launcher
+- packages every `demo-*` project as a `.love`
+- copies those demos into the app games folder
+- lets the LOVE launcher list and open them
+
+### Vendor Patch Bases
+
+Current frozen patch bases:
+
+- `love`: `ab8dfaa1da571d6ebb09ff1fccb91e5039fce7a0`
+- `love-android`: `007d258cb477e51a08229f3d35179966da6e22d3`
+- `love-android/app/src/main/cpp/love`: `5670df13b6980afd025cd7e7d442a24499bf86a7`

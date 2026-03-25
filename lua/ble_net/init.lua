@@ -38,6 +38,7 @@ function M.new(opts)
   local debug_enabled = settings.defaults.debug_enabled
   local limits = settings.limits
   local windows = settings.windows
+  local event_handler = nil
   local notice_dedup = dedup.new({
     max_age = windows.notice_dedup_seconds,
     max_count = limits.dedup_entries,
@@ -217,6 +218,21 @@ function M.new(opts)
     return ble.broadcast(msg_type, payload)
   end
 
+  function self.broadcast_payload(msg_type, payload)
+    return ble.broadcast(msg_type, payload)
+  end
+
+  function self.send_payload(peer_id, msg_type, payload)
+    if ble.send then
+      return ble.send(peer_id, msg_type, payload)
+    end
+    return false
+  end
+
+  function self.set_event_handler(handler)
+    event_handler = handler
+  end
+
   function self.send_chat(text)
     local value = validation.text_payload(text)
     if not value or not state.in_session then
@@ -290,8 +306,10 @@ function M.new(opts)
       self.push_notice(ev.peer_id .. " left (" .. ev.reason .. ")")
 
     elseif ev.type == "message" then
+      if ev.msg_type == "chat" then
       local text = ev.payload and ev.payload.text or "<non-text payload>"
       self.push_message(ev.peer_id, text, "remote")
+      end
 
     elseif ev.type == "session_migrating" then
       self.push_notice("Migrating to " .. ev.new_host_id .. "...")
@@ -312,6 +330,10 @@ function M.new(opts)
 
     elseif ev.type == "diagnostic" then
       self.push_diagnostic(ev.platform, ev.message)
+    end
+
+    if event_handler then
+      event_handler(ev, self, state)
     end
 
     self.refresh_live_state()

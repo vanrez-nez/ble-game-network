@@ -3,43 +3,128 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEMO_DIR="$ROOT_DIR/demo-chat"
 LUA_DIR="$ROOT_DIR/lua"
 LOVE_DIR="$ROOT_DIR/love"
 APPLE_DEPS_DIR="$ROOT_DIR/love-apple-dependencies"
 XCODE_PROJECT="$LOVE_DIR/platform/xcode/love.xcodeproj"
+XCODE_PBXPROJ="$XCODE_PROJECT/project.pbxproj"
 IOS_LIBRARIES_LINK="$LOVE_DIR/platform/xcode/ios/libraries"
 SHARED_FRAMEWORKS_LINK="$LOVE_DIR/platform/xcode/shared/Frameworks"
 DERIVED_DATA_DIR="$ROOT_DIR/.build/ios-demo"
-ARCHIVE_DIR="$ROOT_DIR/.build/ios-demo-archive"
-ARCHIVE_ROOT_DIR="$ARCHIVE_DIR/root"
-LOVE_ARCHIVE="$ARCHIVE_DIR/demo-chat.love"
+ARCHIVE_DIR="$ROOT_DIR/.build/ios-demo-archives"
+ARCHIVE_STAGE_DIR="$ARCHIVE_DIR/staging"
 SCHEME="love-ios"
 CONFIGURATION="Debug"
 BUNDLE_ID="org.love2d.ble-network"
+DEVELOPMENT_TEAM="${IOS_DEVELOPMENT_TEAM:-}"
 INSTALL_APP=1
 LAUNCH_APP=1
 SIMULATOR_ID="booted"
 DEVICE_ID=""
 CLEAN_BUILD=0
 
+DEMO_DIRS=()
+DEMO_ARCHIVES=()
+
+resolve_project_development_team() {
+  if [[ ! -f "$XCODE_PBXPROJ" ]]; then
+    return 0
+  fi
+
+  awk '
+    /DEVELOPMENT_TEAM = / {
+      value = $3
+      gsub(/[";]/, "", value)
+      if (value != "") {
+        print value
+        exit
+      }
+    }
+  ' "$XCODE_PBXPROJ"
+}
+
+discover_demo_dirs() {
+  local demo_dir
+  for demo_dir in "$ROOT_DIR"/demo-*; do
+    if [[ -d "$demo_dir" && -f "$demo_dir/main.lua" ]]; then
+      DEMO_DIRS+=("$demo_dir")
+    fi
+  done
+
+  if [[ "${#DEMO_DIRS[@]}" -eq 0 ]]; then
+    echo "error: no demo-* project directories with main.lua were found" >&2
+    exit 1
+  fi
+}
+
+require_ble_module() {
+  if [[ -f "$LOVE_DIR/src/modules/ble/wrap_Ble.cpp" ]]; then
+    return 0
+  fi
+
+  echo "error: BLE module is not present in $LOVE_DIR" >&2
+  echo "apply the vendor patches explicitly or keep developing in a patched vendor checkout before deploying" >&2
+  exit 1
+}
+
+package_demo_archives() {
+  local demo_dir demo_name archive_root archive_path
+
+  rm -rf "$ARCHIVE_DIR"
+  mkdir -p "$ARCHIVE_STAGE_DIR"
+  DEMO_ARCHIVES=()
+
+  for demo_dir in "${DEMO_DIRS[@]}"; do
+    demo_name="$(basename "$demo_dir")"
+    archive_root="$ARCHIVE_DIR/$demo_name-root"
+    archive_path="$ARCHIVE_STAGE_DIR/$demo_name.love"
+
+    echo "Packaging $demo_name as $archive_path..."
+    rm -rf "$archive_root"
+    mkdir -p "$archive_root/ble_net"
+
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete "$demo_dir"/ "$archive_root"/
+      rsync -a --delete "$LUA_DIR/ble_net"/ "$archive_root/ble_net"/
+    else
+      cp -R "$demo_dir"/. "$archive_root"/
+      cp -R "$LUA_DIR/ble_net"/. "$archive_root/ble_net"/
+    fi
+
+    (
+      cd "$archive_root"
+      zip -qr "$archive_path" .
+    )
+
+    DEMO_ARCHIVES+=("$archive_path")
+  done
+}
+
+remove_bundled_love_archives() {
+  local app_path="$1"
+
+  find "$app_path" -maxdepth 1 -type f -name '*.love' -delete
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./deploy-demo-ios.sh [options]
 
-Packages demo-chat as a .love archive, embeds it into the iOS app bundle using
-the LOVE fused-game packaging path, installs the app, and launches it.
+Builds the LOVE iOS app, packages every demo-* project as its own .love file,
+installs the app, copies the demos into the app Documents directory, and lets
+the LOVE selector choose between them.
 
 By default this targets the currently booted simulator.
 
 Options:
   --release            Build the Release configuration instead of Debug
-  --clean              Remove iOS derived data and packaged archive before build
+  --clean              Remove iOS derived data and packaged archives before build
   --build-only         Build only, skip install/launch
-  --no-launch          Install the app, but do not launch it
+  --no-launch          Install the app and copy demos, but do not launch it
   --simulator ID       Target a specific simulator UDID or 'booted' (default)
   --device ID          Target a physical device via devicectl instead of simctl
   --bundle-id ID       Override the app bundle identifier
+  --team ID            Override the Apple development team identifier
   --help               Show this help
 EOF
 }
@@ -83,6 +168,14 @@ while [[ $# -gt 0 ]]; do
       fi
       BUNDLE_ID="$1"
       ;;
+    --team)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "error: --team requires a value" >&2
+        exit 1
+      fi
+      DEVELOPMENT_TEAM="$1"
+      ;;
     --help|-h)
       usage
       exit 0
@@ -101,10 +194,18 @@ if [[ -n "$DEVICE_ID" && "$SIMULATOR_ID" != "booted" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$DEMO_DIR" ]]; then
-  echo "error: demo directory not found: $DEMO_DIR" >&2
+if [[ -z "$DEVELOPMENT_TEAM" ]]; then
+  DEVELOPMENT_TEAM="$(resolve_project_development_team)"
+fi
+
+if [[ -n "$DEVICE_ID" && -z "$DEVELOPMENT_TEAM" ]]; then
+  echo "error: physical device builds require a development team." >&2
+  echo "set it in the Xcode project, pass --team <TEAM_ID>, or set IOS_DEVELOPMENT_TEAM" >&2
   exit 1
 fi
+
+discover_demo_dirs
+require_ble_module
 
 if [[ ! -d "$XCODE_PROJECT" ]]; then
   echo "error: Xcode project not found: $XCODE_PROJECT" >&2
@@ -142,22 +243,8 @@ fi
 if [[ "$CLEAN_BUILD" -eq 1 ]]; then
   rm -rf "$DERIVED_DATA_DIR" "$ARCHIVE_DIR"
 fi
-mkdir -p "$ARCHIVE_DIR"
 
-echo "Packaging demo-chat as $LOVE_ARCHIVE..."
-rm -rf "$ARCHIVE_ROOT_DIR"
-mkdir -p "$ARCHIVE_ROOT_DIR/ble_net"
-if command -v rsync >/dev/null 2>&1; then
-  rsync -a --delete "$DEMO_DIR"/ "$ARCHIVE_ROOT_DIR"/
-  rsync -a --delete "$LUA_DIR/ble_net"/ "$ARCHIVE_ROOT_DIR/ble_net"/
-else
-  cp -R "$DEMO_DIR"/. "$ARCHIVE_ROOT_DIR"/
-  cp -R "$LUA_DIR/ble_net"/. "$ARCHIVE_ROOT_DIR/ble_net"/
-fi
-(
-  cd "$ARCHIVE_ROOT_DIR"
-  zip -qr "$LOVE_ARCHIVE" .
-)
+package_demo_archives
 
 DESTINATION="generic/platform=iOS Simulator"
 SDK="iphonesimulator"
@@ -170,16 +257,21 @@ if [[ -n "$DEVICE_ID" ]]; then
 fi
 
 echo "Building $SCHEME ($CONFIGURATION, $SDK)..."
-export LOVE_IOS_FUSED_GAME="$LOVE_ARCHIVE"
-xcodebuild \
-  -project "$XCODE_PROJECT" \
-  -scheme "$SCHEME" \
-  -configuration "$CONFIGURATION" \
-  -sdk "$SDK" \
-  -destination "$DESTINATION" \
-  -derivedDataPath "$DERIVED_DATA_DIR" \
-  PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-  build
+xcodebuild_args=(
+  -project "$XCODE_PROJECT"
+  -scheme "$SCHEME"
+  -configuration "$CONFIGURATION"
+  -sdk "$SDK"
+  -destination "$DESTINATION"
+  -derivedDataPath "$DERIVED_DATA_DIR"
+  PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+)
+
+if [[ -n "$DEVELOPMENT_TEAM" ]]; then
+  xcodebuild_args+=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM")
+fi
+
+xcodebuild "${xcodebuild_args[@]}" build
 
 APP_PATH="$DERIVED_DATA_DIR/Build/Products/${CONFIGURATION}-${PRODUCT_DIR_SUFFIX}/love.app"
 if [[ ! -d "$APP_PATH" ]]; then
@@ -187,36 +279,36 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-EMBEDDED_ARCHIVE="$APP_PATH/demo-chat.love"
-if [[ ! -f "$EMBEDDED_ARCHIVE" ]]; then
-  echo "error: fused archive not found in built app: $EMBEDDED_ARCHIVE" >&2
-  exit 1
-fi
-
-if ! cmp -s "$LOVE_ARCHIVE" "$EMBEDDED_ARCHIVE"; then
-  echo "error: built app contains a stale fused archive" >&2
-  echo "  source:   $LOVE_ARCHIVE" >&2
-  echo "  embedded: $EMBEDDED_ARCHIVE" >&2
-  exit 1
-fi
+remove_bundled_love_archives "$APP_PATH"
 
 echo "Built app:"
 echo "  $APP_PATH"
-echo "Packaged archive:"
-echo "  $LOVE_ARCHIVE"
+echo "Packaged demos:"
+for archive_path in "${DEMO_ARCHIVES[@]}"; do
+  echo "  $archive_path"
+done
 
 if [[ "$INSTALL_APP" -eq 0 ]]; then
   exit 0
 fi
 
-if [[ -n "$DEVICE_ID" ]]; then
-  if ! command -v xcrun >/dev/null 2>&1; then
-    echo "error: xcrun was not found in PATH" >&2
-    exit 1
-  fi
+if ! command -v xcrun >/dev/null 2>&1; then
+  echo "error: xcrun was not found in PATH" >&2
+  exit 1
+fi
 
+if [[ -n "$DEVICE_ID" ]]; then
   echo "Installing app on device $DEVICE_ID..."
   xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"
+
+  echo "Copying demos to device Documents..."
+  xcrun devicectl device copy to \
+    --device "$DEVICE_ID" \
+    --source "$ARCHIVE_STAGE_DIR" \
+    --destination "Documents" \
+    --domain-type appDataContainer \
+    --domain-identifier "$BUNDLE_ID" \
+    --remove-existing-content true
 
   if [[ "$LAUNCH_APP" -eq 1 ]]; then
     echo "Launching $BUNDLE_ID on device $DEVICE_ID..."
@@ -226,16 +318,19 @@ if [[ -n "$DEVICE_ID" ]]; then
   exit 0
 fi
 
-if ! command -v xcrun >/dev/null 2>&1; then
-  echo "error: xcrun was not found in PATH" >&2
-  exit 1
-fi
-
 echo "Booting simulator $SIMULATOR_ID if needed..."
 xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
 
 echo "Installing app on simulator $SIMULATOR_ID..."
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+
+SIM_DATA_DIR="$(xcrun simctl get_app_container "$SIMULATOR_ID" "$BUNDLE_ID" data)"
+SIM_DOCUMENTS_DIR="$SIM_DATA_DIR/Documents"
+
+echo "Copying demos to simulator Documents..."
+rm -rf "$SIM_DOCUMENTS_DIR"
+mkdir -p "$SIM_DOCUMENTS_DIR"
+cp "${DEMO_ARCHIVES[@]}" "$SIM_DOCUMENTS_DIR"/
 
 if [[ "$LAUNCH_APP" -eq 1 ]]; then
   echo "Launching $BUNDLE_ID on simulator $SIMULATOR_ID..."
