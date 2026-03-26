@@ -207,6 +207,8 @@ fi
 discover_demo_dirs
 require_ble_module
 
+"$ROOT_DIR/scripts/gen-ble-build-number.sh" "$ROOT_DIR" "$LOVE_DIR"
+
 if [[ ! -d "$XCODE_PROJECT" ]]; then
   echo "error: Xcode project not found: $XCODE_PROJECT" >&2
   exit 1

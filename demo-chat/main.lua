@@ -17,6 +17,8 @@ local panel = ble_ui.panel
 local app = network.state
 local fonts = {}
 
+local debug_overlay = require("ble_debug").new(network)
+
 local ui = {
   input = "",
   input_active = false,
@@ -230,7 +232,7 @@ function love.draw()
     fonts = fonts,
     app = app,
     network = network,
-    overlays = { diag.get_overlay() },
+    overlays = { diag.get_overlay(), debug_overlay },
     lobby_description = "Host a room or scan nearby devices to start chatting.",
     start_host = start_host,
     start_scan = start_scan,
@@ -243,6 +245,9 @@ function love.draw()
       local btn_y = math.floor((metrics.topbar_h - btn_h) * 0.5)
       buttons.register(width - 8 - 64, btn_y, 64, btn_h, "Logs", function()
         diag.toggle()
+      end, "ghost")
+      buttons.register(width - 8 - 64 - 8 - 52, btn_y, 52, btn_h, "DBG", function()
+        debug_overlay:toggle()
       end, "ghost")
     end,
   })

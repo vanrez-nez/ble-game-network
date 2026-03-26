@@ -15,32 +15,7 @@ local overlay = ble_ui.overlay
 local app = network.state
 local fonts = {}
 
-local debug_overlay = overlay.new({ title = "Debug State" })
-debug_overlay.content_fn = function(cx, cy, cw, ch, f)
-  love.graphics.setFont(f.small)
-  love.graphics.setColor(0.80, 0.85, 0.65)
-  local function line(text)
-    love.graphics.print(text, cx, cy)
-    cy = cy + f.small:getHeight() + 2
-  end
-  line("local_id: " .. tostring(app.local_id))
-  line("is_host: " .. tostring(app.is_host))
-  line("in_session: " .. tostring(app.in_session))
-  line("peers: " .. #app.peers)
-  for i = 1, #app.peers do
-    local p = app.peers[i]
-    line("  " .. p.peer_id .. (p.is_host and " (host)" or ""))
-  end
-  line("status: " .. tostring(app.status))
-  if network.last_in then
-    local age = string.format("%.1fs", love.timer.getTime() - network.last_in.time)
-    line("last_in: " .. tostring(network.last_in.msg_type) .. " from " .. tostring(network.last_in.peer_id) .. " " .. age)
-  end
-  if network.last_out then
-    local age = string.format("%.1fs", love.timer.getTime() - network.last_out.time)
-    line("last_out: " .. tostring(network.last_out.msg_type) .. " " .. age)
-  end
-end
+local debug_overlay = require("ble_debug").new(network)
 
 -- Peer tracking: peer_id -> { last_ping_sent, last_pong_recv, flash_send, flash_recv, seq }
 local peers = {}

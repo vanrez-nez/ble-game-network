@@ -100,12 +100,7 @@ instance.content_fn = function(cx, cy, cw, ch, fonts)
   -- Meta info
   love.graphics.setFont(fonts.small)
   love.graphics.setColor(palette.dim)
-  local meta = network.diagnostics_meta_lines()
   local content_y = cy
-  for i = 1, #meta do
-    love.graphics.printf(meta[i], cx, content_y, cw)
-    content_y = content_y + fonts.small:getHeight() + 3
-  end
 
   -- Reserve space for filter bar at bottom
   local filter_bar_h = 36

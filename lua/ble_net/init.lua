@@ -4,6 +4,7 @@ local dedup = require("ble_net.dedup")
 local validation = require("ble_net.validation")
 local alerts = require("ble_ui.alerts")
 local palette = require("ble_ui.palette")
+local ble_log = require("ble_log")
 
 local transport = {}
 for k, v in pairs(ble.TRANSPORT) do transport[k] = v end
@@ -109,6 +110,9 @@ end
 
 function M.new(opts)
   local settings = config.resolve(opts)
+  if opts and opts.log then
+    ble_log.configure(opts.log)
+  end
   local self = {}
   local state = default_state(settings.defaults.title)
   local room_name = validation.room_name(settings.defaults.room_name) or config.defaults.room_name
@@ -163,9 +167,7 @@ function M.new(opts)
   end
 
   function self.diagnostics_meta_lines()
-    return {
-      "Address: " .. self.address_text(),
-    }
+    return {}
   end
 
   function self.room_summary_text(room)
@@ -225,6 +227,7 @@ function M.new(opts)
     if #state.diagnostics > limits.diagnostics then
       table.remove(state.diagnostics, 1)
     end
+    ble_log.write(cat, entry.raw)
   end
 
   function self.refresh_live_state()
@@ -486,6 +489,7 @@ function M.new(opts)
     end
 
     self.refresh_live_state()
+    ble_log.update()
   end
 
   function self.initialize()

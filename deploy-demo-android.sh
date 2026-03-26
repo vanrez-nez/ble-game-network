@@ -232,6 +232,8 @@ fi
 discover_demo_dirs
 require_ble_modules
 
+"$ROOT_DIR/scripts/gen-ble-build-number.sh" "$ROOT_DIR" "$LOVE_DIR" "$ANDROID_LOVE_DIR"
+
 if [[ ! -d "$LOVE_DIR" ]]; then
   echo "error: engine source directory not found: $LOVE_DIR" >&2
   exit 1

@@ -1,0 +1,252 @@
+# iOS Host Connection Loss with Android Clients — Spec Compliance Analysis
+
+**Date:** 2026-03-26
+**Symptom:** When iOS hosts a BLE session and Android devices are clients, iOS loses connection after ~5-6 ping-pong exchanges. Android logs still show received pings from iOS. Never happens when Android hosts.
+
+## Live Log Analysis (2026-03-26 04:17 UTC, Moto g34 5G client → iOS host)
+
+### Key Evidence from Android Logcat
+
+**Session characteristics:**
+- `payload_limit=514`, `fragments=1` — NO fragmentation. High MTU negotiated.
+- Host peer: `6C1489` (iOS), Client peer: `d3a498` (Android)
+
+**Timeline:**
+- `04:14:04 – 04:17:43`: Normal session. Host sends pings (~1/s) and heartbeats (~2/s). Client responds with pongs and sends its own pings. All single-fragment packets.
+- `04:17:43.541`: **Last notification received from host** (ping msgId=373, nonce=558).
+- `04:17:43.556`: Client sends pong (msgId=732). Write succeeds (no error logged).
+- `04:17:43.800`: Client sends ping (msgId=733). Write succeeds.
+- `04:17:44 onwards`: **Client continues sending pings every 1s. ZERO incoming notifications from host. No disconnect event. No write failure. No error.**
+- `04:19:49`: Still sending pings (msgId=858). Still no notifications. Still no disconnect.
+
+**Critical observations:**
+1. **No fragmentation** — `payload_limit=514`, every packet is 1 fragment. Backpressure/queue stall hypothesis was wrong.
+2. **No BLE disconnect** — Android never receives `onConnectionStateChange(STATE_DISCONNECTED)`. GATT link stays alive.
+3. **Client writes continue succeeding** — `client enqueuePacket` + `fragmentPacket` succeed every second. The host's GATT server accepts writes.
+4. **Host silently stops sending notifications** — no more `incomingFragment` after 04:17:43.
+5. **Host never sent pongs** — entire log shows only `type=ping` and `type=heartbeat` from host. No `type=pong` ever received. Host was not responding to client pings.
+6. **Session lasted ~3.5 minutes before failure** (04:14:04 to 04:17:43), not 5-6 seconds as initially reported.
+
+**What this means:**
+- The GATT connection is alive (writes accepted, no disconnect callback).
+- The iOS host stops calling `updateValue:forCharacteristic:onSubscribedCentrals:` entirely.
+- This is NOT a backpressure/queue issue (no fragmentation, high MTU).
+- This is NOT a `didUnsubscribeFromCharacteristic:` issue (connection stays alive).
+- Something on the iOS side causes the host to stop sending notifications while still accepting writes.
+- The missing pong responses from the host suggest the Lua layer may not be processing received writes or the native layer is failing to deliver them to Lua.
+
+**Needs iOS-side investigation:**
+- iOS console logs during the failure window
+- Whether `didReceiveWriteRequests:` is still being called after 04:17:43
+- Whether the Lua `love.update()` loop is still polling events
+- Whether the notification queue still has entries but is not being pumped
+
+---
+
+## Root Cause: iOS Notification Pump Violates Protocol Spec v2 §15.2
+
+### What the spec mandates
+
+Section 15.2 defines the Host Notification Queue pump:
+
+```
+PumpNotificationQueue(device)
+1. Get the queue for device.
+2. If empty, return.
+3. Peek first Fragment.
+4. Send notification to device via GATT Server.
+5. On notification sent callback:
+   a. Remove Fragment from queue.
+   b. If queue not empty, call PumpNotificationQueue(device).
+```
+
+Key requirement: **step 5 is callback-driven**. The fragment is only removed after the platform confirms the notification was sent. The next fragment is only pumped after that confirmation.
+
+### Android implementation (COMPLIANT)
+
+**Files:** `BleManager.java:2063-2087` (pump) + `2613-2636` (callback)
+
+```java
+// Pump: sends one fragment, waits for callback
+private boolean pumpNotificationQueue(BluetoothDevice device) {
+    // ...
+    serverMessageCharacteristic.setValue(queue.peekFirst());
+    gattServer.notifyCharacteristicChanged(device, serverMessageCharacteristic, false);
+    return true;  // fragment stays in queue until callback
+}
+
+// Callback: confirms delivery, then pumps next
+public void onNotificationSent(BluetoothDevice device, int status) {
+    if (status != BluetoothGatt.GATT_SUCCESS) {
+        notificationQueues.remove(deviceKey);               // clear on failure
+        nativeOnError("send_failed", "BLE notification delivery failed.");
+        return;
+    }
+    queue.removeFirst();                                     // remove only on success
+    if (!queue.isEmpty()) pumpNotificationQueue(device);     // pump next
+}
+```
+
+This is a 1:1 match with §15.2 steps 4-5. The callback naturally flow-controls the sending rate — Android never sends faster than the BLE stack can deliver.
+
+### iOS implementation (NON-COMPLIANT)
+
+**File:** `Ble.mm:1295-1328`
+
+```objc
+- (BOOL)pumpNotificationQueueForCentral:(CBCentral *)central
+{
+    // ... checks ...
+
+    NSString *key = centralKey(central);
+    NSMutableArray<NSData *> *queue = _notificationQueues[key];
+    if (queue == nil || queue.count == 0)
+        return YES;
+
+    if (![_peripheralManager updateValue:queue.firstObject
+            forCharacteristic:_hostCharacteristic
+            onSubscribedCentrals:@[central]])
+        return NO;                      // (A) backpressure: returns NO, no retry
+
+    [queue removeObjectAtIndex:0];      // (B) removed immediately, not on callback
+
+    if (queue.count == 0) {
+        [_notificationQueues removeObjectForKey:key];
+        return YES;
+    }
+
+    // schedule next fragment with 15ms spacing
+    if (_reliabilityFragmentSpacingMs > 0) {
+        dispatch_after(...15ms..., ^{
+            [self pumpNotificationQueueForCentral:central];
+        });
+    } else {
+        [self pumpNotificationQueueForCentral:central];
+    }
+    return YES;
+}
+```
+
+**Two violations:**
+
+#### Violation 1: Fragment removed synchronously, not on callback (point B)
+
+`updateValue:forCharacteristic:onSubscribedCentrals:` is synchronous — it returns `YES`/`NO` immediately. `YES` means "queued in CoreBluetooth's internal buffer," NOT "delivered to device." CoreBluetooth has no per-notification delivery callback equivalent to Android's `onNotificationSent()`.
+
+The closest delegate is `peripheralManagerIsReadyToUpdateSubscribers:` (`Ble.mm:2652-2661`), but this signals buffer space availability, not per-fragment delivery. It fires when the internal buffer drains enough to accept new notifications.
+
+The iOS pump removes the fragment immediately on `YES` (line 1308) and schedules the next fragment after 15ms. This means iOS fires fragments as fast as 15ms apart, regardless of whether the BLE stack has actually delivered them. There is no flow control.
+
+#### Violation 2: No recovery when send fails (point A)
+
+When `updateValue:` returns `NO` (CoreBluetooth transmit buffer full):
+- The fragment correctly stays in the queue (it was peeked, not removed)
+- But the pump simply returns `NO` — **no retry is scheduled**
+- The queue is permanently stalled
+
+The only recovery path is `peripheralManagerIsReadyToUpdateSubscribers:` (`Ble.mm:2652-2661`):
+
+```objc
+- (void)peripheralManagerIsReadyToUpdateSubscribers:(CBPeripheralManager *)peripheral
+{
+    for (NSString *key in [_notificationQueues allKeys])
+    {
+        CBCentral *central = _centralsByKey[key];
+        if (central != nil)
+            [self pumpNotificationQueueForCentral:central];
+    }
+}
+```
+
+This delegate has **no guaranteed timing from Apple**. It may fire quickly or not at all. Meanwhile, new traffic continues appending to the stalled queue:
+- Heartbeat roster fingerprint: every 2s to all clients
+- Heartbeat re-broadcast of last broadcast packet: every 2s to all clients
+- Relay of each client's messages to other clients: every ~1s per client
+
+---
+
+## How This Causes the ~5-6 Second Connection Loss
+
+Timeline with 2 Android clients connected to iOS host running ping-pong demo:
+
+| Time | Event | Queue state |
+|------|-------|-------------|
+| T=0s | Session established, queues empty | 0 fragments |
+| T=1s | Ping relays (2 per second) | Draining normally |
+| T=2s | Heartbeat: fingerprint + re-broadcast to 2 clients | Queue growing |
+| T=3-4s | Continued pings + heartbeat | CoreBluetooth buffer filling |
+| T=4-5s | `updateValue:` returns NO | **Queue stalled** |
+| T=5-6s | 2-3 more seconds of heartbeats + relays pile up | Queue growing unbounded |
+| T=6-7s | CoreBluetooth fires `didUnsubscribeFromCharacteristic:` | **Client removed** |
+
+When `didUnsubscribeFromCharacteristic:` fires (`Ble.mm:2621-2650`), it maps to §14 `OnHostClientDisconnected`:
+- Clears notification queue, pending client state, MTU map
+- Triggers `BeginPeerReconnectGrace(peerID)` — 10s grace window
+- Client is effectively disconnected from the session
+
+**Why Android still shows received pings:** The BLE L2CAP link may still be alive — `didUnsubscribeFromCharacteristic:` is a GATT-level event from CoreBluetooth's perspective, not necessarily an L2CAP disconnect. Or Android is processing notifications that were already buffered in its BLE stack before the iOS-side unsubscribe.
+
+**Why it's intermittent:** Depends on MTU negotiation result. If `central.maximumUpdateValueLength` returns a high value (e.g., 182 bytes from a 185 MTU negotiation), packets fit in 1 fragment instead of 4-5, reducing queue pressure. Under favorable conditions, the queue never fills.
+
+---
+
+## §15.2 Spec Gap: No Failure Handling Defined
+
+§15.1 (Client Write Queue) has explicit failure handling at step 6c:
+
+> "If write failed, clear queue and emit error `write_failed` with platform-specific BLE error detail."
+
+§15.2 (Host Notification Queue) has **no equivalent step**. It only covers the happy path. Missing from the spec:
+
+1. What to do when notification send fails (backpressure or error)
+2. Whether to clear the queue (like §15.1), retry, or use platform-specific recovery
+3. Queue size limits to prevent unbounded growth during backpressure
+4. How platform-specific mechanisms (iOS `peripheralManagerIsReadyToUpdateSubscribers:`) map to the abstract pump model
+
+This gap leaves iOS implementations without a spec-defined recovery path when `updateValue:` returns NO.
+
+---
+
+## Additional Compliance Gaps
+
+### Max Concurrent Assemblies Per Source not enforced
+
+- **Spec:** §17 defines "Max Concurrent Assemblies Per Source: 32"
+- **iOS:** Fragment assembly logic in `Ble.mm` creates assemblies without per-source limit
+- **Risk:** Misbehaving peer could exhaust memory
+
+### MTU 185 not proactively requested
+
+- **Spec:** §16 "Desired ATT MTU: 185 bytes"
+- **iOS:** Reads `central.maximumUpdateValueLength` reactively at subscribe time (`Ble.mm:2618`) but doesn't proactively request MTU 185
+- **Impact:** May operate at lower MTU than necessary, causing more fragmentation and more queue pressure — contributing to the backpressure problem above
+
+---
+
+## Relevant Code Locations
+
+| Component | File | Lines |
+|-----------|------|-------|
+| iOS notification pump (bug) | `love/src/modules/ble/apple/Ble.mm` | 1295-1328 |
+| iOS notification enqueue | `love/src/modules/ble/apple/Ble.mm` | 1330-1359 |
+| iOS readyToUpdate delegate | `love/src/modules/ble/apple/Ble.mm` | 2652-2661 |
+| iOS didUnsubscribe handler | `love/src/modules/ble/apple/Ble.mm` | 2621-2650 |
+| iOS heartbeat (adds queue pressure) | `love/src/modules/ble/apple/Ble.mm` | 2779-2822 |
+| iOS unused `_fragmentPacingInFlight` | `love/src/modules/ble/apple/Ble.mm` | 503 |
+| Android notification pump (compliant) | `BleManager.java` | 2063-2087 |
+| Android onNotificationSent (compliant) | `BleManager.java` | 2613-2636 |
+| Spec §15.2 | `protocol-spec/version-2/spec.md` | 720-732 |
+| Spec §15.1 (has failure handling) | `protocol-spec/version-2/spec.md` | 700-718 |
+| Spec §14 disconnect tree | `protocol-spec/version-2/spec.md` | 682-696 |
+
+---
+
+## Summary
+
+| Finding | Type | Severity |
+|---------|------|----------|
+| iOS pump removes fragment synchronously instead of on callback (§15.2 step 5) | Code divergence | Critical |
+| iOS pump has no retry/recovery on `updateValue:` NO | Code divergence | Critical |
+| §15.2 defines no failure handling for notification sends | Spec gap | Critical |
+| Max concurrent assemblies not enforced on iOS | Code divergence | Major |
+| MTU 185 not proactively requested on iOS | Code divergence | Medium |

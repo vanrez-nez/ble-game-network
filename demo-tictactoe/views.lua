@@ -209,44 +209,31 @@ local function dump(v, depth)
   return "{" .. table.concat(parts, ", ") .. "}"
 end
 
-function M.make_debug_content(network_ref)
-  return function(cx, cy, cw, ch, f)
-    love.graphics.setFont(f.small)
-    local lh = f.small:getHeight() + 3
-    local now = love.timer.getTime()
+function M.make_debug_overlay(network_ref)
+  local heading_color = {0.55, 0.70, 0.45}
+  return require("ble_debug").new(network_ref, {
+    extra = function(cx, cy, cw, ch, f, line)
+      local now = love.timer.getTime()
 
-    local function heading(text)
-      love.graphics.setColor(0.55, 0.70, 0.45)
-      love.graphics.print(text, cx, cy)
-      cy = cy + lh
-    end
+      line("LAST RECEIVED", heading_color)
+      local i = network_ref.last_in
+      if i then
+        line(string.format("  %s from %s  (%.1fs ago)", i.msg_type or "?", i.peer_id or "?", now - i.time))
+        if i.payload then line("  " .. dump(i.payload)) end
+      else
+        line("  (none)")
+      end
 
-    local function line(text)
-      love.graphics.setColor(0.80, 0.85, 0.65)
-      love.graphics.printf(text, cx + 4, cy, cw - 8)
-      local _, wrapped = f.small:getWrap(text, cw - 8)
-      cy = cy + math.max(1, #wrapped) * f.small:getHeight() + 2
-    end
-
-    heading("LAST RECEIVED")
-    local i = network_ref.last_in
-    if i then
-      line(string.format("%s from %s  (%.1fs ago)", i.msg_type or "?", i.peer_id or "?", now - i.time))
-      if i.payload then line(dump(i.payload)) end
-    else
-      line("(none)")
-    end
-
-    cy = cy + 6
-    heading("LAST SENT")
-    local o = network_ref.last_out
-    if o then
-      line(string.format("%s  (%.1fs ago)", o.msg_type or "?", now - o.time))
-      if o.payload then line(dump(o.payload)) end
-    else
-      line("(none)")
-    end
-  end
+      line("LAST SENT", heading_color)
+      local o = network_ref.last_out
+      if o then
+        line(string.format("  %s  (%.1fs ago)", o.msg_type or "?", now - o.time))
+        if o.payload then line("  " .. dump(o.payload)) end
+      else
+        line("  (none)")
+      end
+    end,
+  })
 end
 
 return M

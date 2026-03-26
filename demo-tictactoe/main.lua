@@ -28,7 +28,7 @@ local name_input_active = false
 local name_input_box = nil
 local fonts = {}
 
-local debug_overlay = ble_ui.overlay.new({ title = "Debug State" })
+local debug_overlay
 
 local function generate_alias()
   math.randomseed(os.time() + os.clock() * 1000)
@@ -121,7 +121,7 @@ function love.load()
     leave_session = leave_session,
   })
 
-  debug_overlay.content_fn = views.make_debug_content(network)
+  debug_overlay = views.make_debug_overlay(network)
 
   network.set_event_handler(handle_game_event)
   network.initialize()
