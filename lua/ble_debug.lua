@@ -1,4 +1,5 @@
 local overlay_mod = require("ble_ui.overlay")
+local ble_build = require("ble_build")
 local ble_log = require("ble_log")
 
 local M = {}
@@ -38,9 +39,12 @@ function M.new(network, opts)
     end
 
     -- native state
-    local dbg = love.ble and love.ble.debug_state and love.ble.debug_state() or ""
-    line("build: " .. (dbg:match("build=(%S+)") or "?"))
-    line("address: " .. (dbg:match("address=(%S+)") or "?"))
+    local address = "?"
+    if love.ble and love.ble.address then
+      address = love.ble.address() or "?"
+    end
+    line("build: " .. ble_build.id())
+    line("address: " .. address)
     line("ip: " .. get_local_ip())
     line("log_server: " .. tostring(ble_log.server_state))
 

@@ -22,6 +22,10 @@ CLEAN_NATIVE=1
 DEMO_DIRS=()
 DEMO_ARCHIVES=()
 
+get_demo_build_id() {
+  git -C "$ROOT_DIR" describe --always --dirty --broken 2>/dev/null || echo "unknown"
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./deploy-demo-android.sh [options]
@@ -58,7 +62,9 @@ discover_demo_dirs() {
 }
 
 package_demo_archives() {
-  local demo_dir demo_name archive_root archive_path
+  local demo_dir demo_name archive_root archive_path build_id
+
+  build_id="$(get_demo_build_id)"
 
   rm -rf "$ARCHIVE_DIR"
   mkdir -p "$ARCHIVE_DIR"
@@ -80,6 +86,8 @@ package_demo_archives() {
       cp -R "$demo_dir"/. "$archive_root"/
       cp -R "$LUA_DIR"/. "$archive_root"/
     fi
+
+    printf '%s\n' "$build_id" > "$archive_root/ble-build-id.txt"
 
     (
       cd "$archive_root"
@@ -231,8 +239,6 @@ fi
 
 discover_demo_dirs
 require_ble_modules
-
-"$ROOT_DIR/scripts/gen-ble-build-number.sh" "$ROOT_DIR" "$LOVE_DIR" "$ANDROID_LOVE_DIR"
 
 if [[ ! -d "$LOVE_DIR" ]]; then
   echo "error: engine source directory not found: $LOVE_DIR" >&2

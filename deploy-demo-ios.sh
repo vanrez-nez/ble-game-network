@@ -26,6 +26,10 @@ CLEAN_BUILD=0
 DEMO_DIRS=()
 DEMO_ARCHIVES=()
 
+get_demo_build_id() {
+  git -C "$ROOT_DIR" describe --always --dirty --broken 2>/dev/null || echo "unknown"
+}
+
 resolve_project_development_team() {
   if [[ ! -f "$XCODE_PBXPROJ" ]]; then
     return 0
@@ -68,7 +72,9 @@ require_ble_module() {
 }
 
 package_demo_archives() {
-  local demo_dir demo_name archive_root archive_path
+  local demo_dir demo_name archive_root archive_path build_id
+
+  build_id="$(get_demo_build_id)"
 
   rm -rf "$ARCHIVE_DIR"
   mkdir -p "$ARCHIVE_STAGE_DIR"
@@ -90,6 +96,8 @@ package_demo_archives() {
       cp -R "$demo_dir"/. "$archive_root"/
       cp -R "$LUA_DIR"/. "$archive_root"/
     fi
+
+    printf '%s\n' "$build_id" > "$archive_root/ble-build-id.txt"
 
     (
       cd "$archive_root"
@@ -206,8 +214,6 @@ fi
 
 discover_demo_dirs
 require_ble_module
-
-"$ROOT_DIR/scripts/gen-ble-build-number.sh" "$ROOT_DIR" "$LOVE_DIR"
 
 if [[ ! -d "$XCODE_PROJECT" ]]; then
   echo "error: Xcode project not found: $XCODE_PROJECT" >&2
