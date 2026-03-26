@@ -1,0 +1,727 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 085ee4028..02199786f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -381,9 +381,64 @@ target_link_libraries(love_audio INTERFACE
+ 	love_audio_openal
+ )
+ 
+-#
+-# love.data
+-#
++#
++# love.ble
++#
++
++add_library(love_ble_root STATIC
++	src/modules/ble/Ble.cpp
++	src/modules/ble/Ble.h
++	src/modules/ble/Codec.cpp
++	src/modules/ble/Codec.h
++	src/modules/ble/wrap_Ble.cpp
++	src/modules/ble/wrap_Ble.h
++)
++target_link_libraries(love_ble_root PUBLIC
++	lovedep::Lua
++)
++
++if(ANDROID)
++	add_library(love_ble_android STATIC
++		src/modules/ble/android/Ble.cpp
++		src/modules/ble/android/Ble.h
++	)
++	target_link_libraries(love_ble_android PUBLIC
++		lovedep::Lua
++	)
++elseif(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
++	add_library(love_ble_apple STATIC
++		src/modules/ble/apple/Ble.h
++		src/modules/ble/apple/Ble.mm
++	)
++	target_link_libraries(love_ble_apple PUBLIC
++		lovedep::Lua
++		objc
++		"-framework CoreBluetooth"
++		"-framework Foundation"
++	)
++else()
++	add_library(love_ble_sdl STATIC
++		src/modules/ble/sdl/Ble.cpp
++		src/modules/ble/sdl/Ble.h
++	)
++	target_link_libraries(love_ble_sdl PUBLIC
++		lovedep::Lua
++	)
++endif()
++
++add_library(love_ble INTERFACE)
++target_link_libraries(love_ble INTERFACE love_ble_root)
++if(ANDROID)
++	target_link_libraries(love_ble INTERFACE love_ble_android)
++elseif(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
++	target_link_libraries(love_ble INTERFACE love_ble_apple)
++else()
++	target_link_libraries(love_ble INTERFACE love_ble_sdl)
++endif()
++
++#
++# love.data
++#
+ 
+ add_library(love_data STATIC
+ 	src/modules/data/ByteData.cpp
+@@ -1910,11 +1965,12 @@ set_target_properties(liblove PROPERTIES
+ 	CXX_VISIBILITY_PRESET hidden
+ 	VISIBILITY_INLINES_HIDDEN ON
+ 	LIBRARY_OUTPUT_NAME "${LOVE_LIB_NAME}")
+-set(LIBLOVE_DEPENDENCIES
+-	love_common
+-	love_audio
+-	love_data
+-	love_event
++set(LIBLOVE_DEPENDENCIES
++	love_common
++	love_audio
++	love_ble
++	love_data
++	love_event
+ 	love_filesystem
+ 	love_font
+ 	love_graphics
+diff --git a/platform/xcode/ios/love-ios.plist b/platform/xcode/ios/love-ios.plist
+index 21b2c64e5..7f84d6f0c 100644
+--- a/platform/xcode/ios/love-ios.plist
++++ b/platform/xcode/ios/love-ios.plist
+@@ -45,6 +45,8 @@
+ 	<true/>
+ 	<key>LSSupportsOpeningDocumentsInPlace</key>
+ 	<false/>
++	<key>NSBluetoothAlwaysUsageDescription</key>
++	<string>This app uses Bluetooth to discover and join nearby local multiplayer sessions.</string>
+ 	<key>UIFileSharingEnabled</key>
+ 	<true/>
+ 	<key>UILaunchStoryboardName</key>
+diff --git a/platform/xcode/liblove.xcodeproj/project.pbxproj b/platform/xcode/liblove.xcodeproj/project.pbxproj
+index dff783ff7..c3573b311 100644
+--- a/platform/xcode/liblove.xcodeproj/project.pbxproj
++++ b/platform/xcode/liblove.xcodeproj/project.pbxproj
+@@ -54,6 +54,14 @@
+ 		D91C76132DE3D088001FC408 /* spirv.hpp11 in Resources */ = {isa = PBXBuildFile; fileRef = D91C76102DE3D088001FC408 /* spirv.hpp11 */; };
+ 		D91C76152DE3D0A2001FC408 /* visibility.h in Headers */ = {isa = PBXBuildFile; fileRef = D91C76142DE3D0A2001FC408 /* visibility.h */; };
+ 		D923E7D3296B85B9002FF1B3 /* harfbuzz.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D923E7D2296B85B9002FF1B3 /* harfbuzz.xcframework */; };
++		D9E110012F10010000B1E001 /* Ble.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E110112F10010000B1E001 /* Ble.cpp */; };
++		D9E110022F10010000B1E001 /* Ble.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E110112F10010000B1E001 /* Ble.cpp */; };
++		D9E110032F10010000B1E001 /* Codec.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E110132F10010000B1E001 /* Codec.cpp */; };
++		D9E110042F10010000B1E001 /* Codec.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E110132F10010000B1E001 /* Codec.cpp */; };
++		D9E110052F10010000B1E001 /* wrap_Ble.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E110152F10010000B1E001 /* wrap_Ble.cpp */; };
++		D9E110062F10010000B1E001 /* wrap_Ble.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E110152F10010000B1E001 /* wrap_Ble.cpp */; };
++		D9E110072F10010000B1E001 /* Ble.mm in Sources */ = {isa = PBXBuildFile; fileRef = D9E110182F10010000B1E001 /* Ble.mm */; };
++		D9E110082F10010000B1E001 /* Ble.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D9E1101B2F10010000B1E001 /* Ble.cpp */; };
+ 		D93660F82D1C727C00C0EC4B /* Touch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D93660F72D1C727C00C0EC4B /* Touch.cpp */; };
+ 		D93660F92D1C727C00C0EC4B /* Touch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D93660F72D1C727C00C0EC4B /* Touch.cpp */; };
+ 		D943E58E2A24D56000D80361 /* PhysfsIo.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D943E58C2A24D56000D80361 /* PhysfsIo.cpp */; };
+@@ -2322,6 +2330,16 @@
+ 		FAFEB29628F210550025D7D0 /* unixdgram.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = unixdgram.h; sourceTree = "<group>"; };
+ 		FAFEB29728F210550025D7D0 /* unixstream.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = unixstream.c; sourceTree = "<group>"; };
+ 		FAFEB29828F210550025D7D0 /* unixstream.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = unixstream.h; sourceTree = "<group>"; };
++		D9E110112F10010000B1E001 /* Ble.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Ble.cpp; sourceTree = "<group>"; };
++		D9E110122F10010000B1E001 /* Ble.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = Ble.h; sourceTree = "<group>"; };
++		D9E110132F10010000B1E001 /* Codec.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Codec.cpp; sourceTree = "<group>"; };
++		D9E110142F10010000B1E001 /* Codec.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = Codec.h; sourceTree = "<group>"; };
++		D9E110152F10010000B1E001 /* wrap_Ble.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = wrap_Ble.cpp; sourceTree = "<group>"; };
++		D9E110162F10010000B1E001 /* wrap_Ble.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = wrap_Ble.h; sourceTree = "<group>"; };
++		D9E110182F10010000B1E001 /* Ble.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = Ble.mm; sourceTree = "<group>"; };
++		D9E110192F10010000B1E001 /* Ble.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = Ble.h; sourceTree = "<group>"; };
++		D9E1101B2F10010000B1E001 /* Ble.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Ble.cpp; sourceTree = "<group>"; };
++		D9E1101C2F10010000B1E001 /* Ble.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = Ble.h; sourceTree = "<group>"; };
+ /* End PBXFileReference section */
+ 
+ /* Begin PBXFrameworksBuildPhase section */
+@@ -2407,6 +2425,39 @@
+ 			path = ResourceLimits;
+ 			sourceTree = "<group>";
+ 		};
++		D9E1100A2F10010000B1E001 /* ble */ = {
++			isa = PBXGroup;
++			children = (
++				D9E110112F10010000B1E001 /* Ble.cpp */,
++				D9E110122F10010000B1E001 /* Ble.h */,
++				D9E110132F10010000B1E001 /* Codec.cpp */,
++				D9E110142F10010000B1E001 /* Codec.h */,
++				D9E110172F10010000B1E001 /* apple */,
++				D9E1101A2F10010000B1E001 /* sdl */,
++				D9E110152F10010000B1E001 /* wrap_Ble.cpp */,
++				D9E110162F10010000B1E001 /* wrap_Ble.h */,
++			);
++			path = ble;
++			sourceTree = "<group>";
++		};
++		D9E110172F10010000B1E001 /* apple */ = {
++			isa = PBXGroup;
++			children = (
++				D9E110192F10010000B1E001 /* Ble.h */,
++				D9E110182F10010000B1E001 /* Ble.mm */,
++			);
++			path = apple;
++			sourceTree = "<group>";
++		};
++		D9E1101A2F10010000B1E001 /* sdl */ = {
++			isa = PBXGroup;
++			children = (
++				D9E1101B2F10010000B1E001 /* Ble.cpp */,
++				D9E1101C2F10010000B1E001 /* Ble.h */,
++			);
++			path = sdl;
++			sourceTree = "<group>";
++		};
+ 		D9F0C2D32C680A5500BB2D25 /* generic */ = {
+ 			isa = PBXGroup;
+ 			children = (
+@@ -2728,6 +2779,7 @@
+ 			isa = PBXGroup;
+ 			children = (
+ 				FA0B7B3D1A95902C000E1D17 /* audio */,
++				D9E1100A2F10010000B1E001 /* ble */,
+ 				FACA02DF1F5E396B0084B28F /* data */,
+ 				FA0B7B521A95902C000E1D17 /* event */,
+ 				FA0B7B5A1A95902C000E1D17 /* filesystem */,
+@@ -4656,6 +4708,10 @@
+ 			isa = PBXSourcesBuildPhase;
+ 			buildActionMask = 2147483647;
+ 			files = (
++				D9E110022F10010000B1E001 /* Ble.cpp in Sources */,
++				D9E110042F10010000B1E001 /* Codec.cpp in Sources */,
++				D9E110072F10010000B1E001 /* Ble.mm in Sources */,
++				D9E110062F10010000B1E001 /* wrap_Ble.cpp in Sources */,
+ 				FA0B7DE01A95902C000E1D17 /* wrap_Math.cpp in Sources */,
+ 				FA0B7DA91A95902C000E1D17 /* PVRHandler.cpp in Sources */,
+ 				FAE64A842071363100BC7981 /* physfs_archiver_iso9660.c in Sources */,
+@@ -5089,6 +5145,10 @@
+ 			isa = PBXSourcesBuildPhase;
+ 			buildActionMask = 2147483647;
+ 			files = (
++				D9E110082F10010000B1E001 /* Ble.cpp in Sources */,
++				D9E110012F10010000B1E001 /* Ble.cpp in Sources */,
++				D9E110032F10010000B1E001 /* Codec.cpp in Sources */,
++				D9E110052F10010000B1E001 /* wrap_Ble.cpp in Sources */,
+ 				217DFBDD1D9F6D490055D849 /* compat.c in Sources */,
+ 				FA0B7DDF1A95902C000E1D17 /* wrap_Math.cpp in Sources */,
+ 				FA0B7DA81A95902C000E1D17 /* PVRHandler.cpp in Sources */,
+diff --git a/platform/xcode/love.xcodeproj/project.pbxproj b/platform/xcode/love.xcodeproj/project.pbxproj
+index 487e01af8..44c6c6b61 100644
+--- a/platform/xcode/love.xcodeproj/project.pbxproj
++++ b/platform/xcode/love.xcodeproj/project.pbxproj
+@@ -20,6 +20,7 @@
+ 		D9596F642CBAC98B00BE58C1 /* SDL3.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; };
+ 		D9596F662CBAC99F00BE58C1 /* SDL3.xcframework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+ 		D9DAB9372963CF6900C64820 /* harfbuzz.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = D9DAB9352963CF5F00C64820 /* harfbuzz.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
++		D9E120012F10020000B1E001 /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9E120022F10020000B1E001 /* CoreBluetooth.framework */; };
+ 		FA0797991BF480A200034B7C /* GameController.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA0797981BF480A200034B7C /* GameController.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+ 		FA08F69616C766E000F007B5 /* love.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA08F69116C765A200F007B5 /* love.framework */; };
+ 		FA08F69716C766E700F007B5 /* love.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = FA08F69116C765A200F007B5 /* love.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+@@ -125,6 +126,7 @@
+ 		CE73F7FF1EEB64150052DAB3 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS10.3.sdk/System/Library/Frameworks/AVFoundation.framework; sourceTree = DEVELOPER_DIR; };
+ 		D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = SDL3.xcframework; path = shared/Frameworks/SDL3.xcframework; sourceTree = "<group>"; };
+ 		D9DAB9352963CF5F00C64820 /* harfbuzz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = harfbuzz.framework; path = macosx/Frameworks/harfbuzz.framework; sourceTree = "<group>"; };
++		D9E120022F10020000B1E001 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS10.3.sdk/System/Library/Frameworks/CoreBluetooth.framework; sourceTree = DEVELOPER_DIR; };
+ 		FA0797981BF480A200034B7C /* GameController.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GameController.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS9.1.sdk/System/Library/Frameworks/GameController.framework; sourceTree = DEVELOPER_DIR; };
+ 		FA08F69116C765A200F007B5 /* love.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = love.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+ 		FA0B7F061A95AAF3000E1D17 /* love.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = love.app; sourceTree = BUILT_PRODUCTS_DIR; };
+@@ -171,6 +173,7 @@
+ 			files = (
+ 				FA84DE78277CB55B002674C6 /* CoreHaptics.framework in Frameworks */,
+ 				FAE64A9D2072738600BC7981 /* Metal.framework in Frameworks */,
++				D9E120012F10020000B1E001 /* CoreBluetooth.framework in Frameworks */,
+ 				FA15DFB41F9B8D9E0042AB22 /* libbz2.tbd in Frameworks */,
+ 				CE73F8001EEB64150052DAB3 /* AVFoundation.framework in Frameworks */,
+ 				FA5D24D11A96E73300C6FC8F /* liblove.a in Frameworks */,
+@@ -197,6 +200,7 @@
+ 				D9596F632CBAC98B00BE58C1 /* SDL3.xcframework */,
+ 				FA84DE77277CB55B002674C6 /* CoreHaptics.framework */,
+ 				FAE64A9C2072738600BC7981 /* Metal.framework */,
++				D9E120022F10020000B1E001 /* CoreBluetooth.framework */,
+ 				FA15DFB31F9B8D9E0042AB22 /* libbz2.tbd */,
+ 				CE73F7FF1EEB64150052DAB3 /* AVFoundation.framework */,
+ 				FA5D24801A96C97900C6FC8F /* ios */,
+@@ -686,7 +690,7 @@
+ 				CODE_SIGN_IDENTITY = "iPhone Developer";
+ 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+ 				COPY_PHASE_STRIP = NO;
+-				DEVELOPMENT_TEAM = "";
++				DEVELOPMENT_TEAM = D9LA748745;
+ 				ENABLE_BITCODE = NO;
+ 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+ 				FRAMEWORK_SEARCH_PATHS = (
+@@ -716,7 +720,7 @@
+ 				);
+ 				MARKETING_VERSION = 12.0;
+ 				MTL_ENABLE_DEBUG_INFO = YES;
+-				PRODUCT_BUNDLE_IDENTIFIER = org.love2d.love;
++				PRODUCT_BUNDLE_IDENTIFIER = "org.love2d.ble-network";
+ 				PRODUCT_NAME = love;
+ 				PROVISIONING_PROFILE = "";
+ 				SDKROOT = iphoneos;
+@@ -741,7 +745,7 @@
+ 				CODE_SIGN_IDENTITY = "iPhone Developer";
+ 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+ 				COPY_PHASE_STRIP = YES;
+-				DEVELOPMENT_TEAM = "";
++				DEVELOPMENT_TEAM = D9LA748745;
+ 				ENABLE_BITCODE = NO;
+ 				ENABLE_NS_ASSERTIONS = NO;
+ 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+@@ -766,7 +770,7 @@
+ 				);
+ 				MARKETING_VERSION = 12.0;
+ 				MTL_ENABLE_DEBUG_INFO = NO;
+-				PRODUCT_BUNDLE_IDENTIFIER = org.love2d.love;
++				PRODUCT_BUNDLE_IDENTIFIER = "org.love2d.ble-network";
+ 				PRODUCT_NAME = love;
+ 				PROVISIONING_PROFILE = "";
+ 				SDKROOT = iphoneos;
+@@ -792,7 +796,7 @@
+ 				CODE_SIGN_IDENTITY = "iPhone Developer";
+ 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+ 				COPY_PHASE_STRIP = YES;
+-				DEVELOPMENT_TEAM = "";
++				DEVELOPMENT_TEAM = D9LA748745;
+ 				ENABLE_BITCODE = NO;
+ 				ENABLE_NS_ASSERTIONS = NO;
+ 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+@@ -817,7 +821,7 @@
+ 				);
+ 				MARKETING_VERSION = 12.0;
+ 				MTL_ENABLE_DEBUG_INFO = NO;
+-				PRODUCT_BUNDLE_IDENTIFIER = org.love2d.love;
++				PRODUCT_BUNDLE_IDENTIFIER = "org.love2d.ble-network";
+ 				PRODUCT_NAME = love;
+ 				PROVISIONING_PROFILE = "";
+ 				SDKROOT = iphoneos;
+diff --git a/src/common/Module.h b/src/common/Module.h
+index c15992cb3..5031af1ba 100644
+--- a/src/common/Module.h
++++ b/src/common/Module.h
+@@ -40,6 +40,7 @@ class Module : public Object
+ 	{
+ 		M_UNKNOWN = -1, // Use this for modules outside of LOVE's source code.
+ 		M_AUDIO,
++		M_BLE,
+ 		M_DATA,
+ 		M_EVENT,
+ 		M_FILESYSTEM,
+diff --git a/src/common/android.cpp b/src/common/android.cpp
+index bead08c6c..e179ceba6 100644
+--- a/src/common/android.cpp
++++ b/src/common/android.cpp
+@@ -319,6 +319,330 @@ void showRecordingPermissionMissingDialog()
+ 	env->DeleteLocalRef(activity);
+ }
+ 
++bool hasBluetoothPermission()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	static jmethodID methodID = env->GetMethodID(clazz, "hasBluetoothPermissions", "()Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++		env->ExceptionClear();
++	else
++		result = env->CallBooleanMethod(activity, methodID);
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++void requestBluetoothPermission()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	static jmethodID methodID = env->GetMethodID(clazz, "requestBluetoothPermissions", "()V");
++
++	if (methodID == nullptr)
++		env->ExceptionClear();
++	else
++		env->CallVoidMethod(activity, methodID);
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++}
++
++bool hasBluetoothLE()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	static jmethodID methodID = env->GetMethodID(clazz, "hasBluetoothLE", "()Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++		env->ExceptionClear();
++	else
++		result = env->CallBooleanMethod(activity, methodID);
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++std::string getBluetoothRadioState()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	static jmethodID methodID = env->GetMethodID(clazz, "getBluetoothRadioState", "()Ljava/lang/String;");
++	std::string result("unsupported");
++
++	if (methodID == nullptr)
++	{
++		env->ExceptionClear();
++	}
++	else
++	{
++		jstring state = (jstring) env->CallObjectMethod(activity, methodID);
++
++		if (state != nullptr)
++		{
++			const char *chars = env->GetStringUTFChars(state, nullptr);
++			result = chars;
++			env->ReleaseStringUTFChars(state, chars);
++			env->DeleteLocalRef(state);
++		}
++	}
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++std::string getBluetoothAdapterAddress()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	static jmethodID methodID = env->GetMethodID(clazz, "getBluetoothAdapterAddress", "()Ljava/lang/String;");
++	std::string result;
++
++	if (methodID == nullptr)
++	{
++		env->ExceptionClear();
++	}
++	else
++	{
++		jstring address = (jstring) env->CallObjectMethod(activity, methodID);
++
++		if (address != nullptr)
++		{
++			const char *chars = env->GetStringUTFChars(address, nullptr);
++			result = chars != nullptr ? chars : "";
++			if (chars != nullptr)
++				env->ReleaseStringUTFChars(address, chars);
++			env->DeleteLocalRef(address);
++		}
++	}
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++void bleApplyReliabilityConfig(double heartbeatInterval, int fragmentSpacingMs, int dedupWindow)
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleApplyReliabilityConfig", "(DII)V");
++	if (methodID != nullptr)
++		env->CallVoidMethod(activity, methodID, heartbeatInterval, fragmentSpacingMs, dedupWindow);
++	else
++		env->ExceptionClear();
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++}
++
++std::string bleDebugState()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleDebugState", "()Ljava/lang/String;");
++	std::string result = "unavailable";
++	if (methodID != nullptr)
++	{
++		jstring jresult = (jstring) env->CallObjectMethod(activity, methodID);
++		if (jresult != nullptr)
++		{
++			const char *str = env->GetStringUTFChars(jresult, nullptr);
++			if (str != nullptr)
++			{
++				result = str;
++				env->ReleaseStringUTFChars(jresult, str);
++			}
++			env->DeleteLocalRef(jresult);
++		}
++	}
++	else
++		env->ExceptionClear();
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++	return result;
++}
++
++bool bleHost(const std::string &room, int maxClients, const std::string &transport)
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleHost", "(Ljava/lang/String;ILjava/lang/String;)Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++	{
++		env->ExceptionClear();
++	}
++	else
++	{
++		jstring jroom = env->NewStringUTF(room.c_str());
++		jstring jtransport = env->NewStringUTF(transport.c_str());
++		result = env->CallBooleanMethod(activity, methodID, jroom, maxClients, jtransport);
++		env->DeleteLocalRef(jroom);
++		env->DeleteLocalRef(jtransport);
++	}
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++bool bleScan()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleScan", "()Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++		env->ExceptionClear();
++	else
++		result = env->CallBooleanMethod(activity, methodID);
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++bool bleJoin(const std::string &roomId)
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleJoin", "(Ljava/lang/String;)Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++	{
++		env->ExceptionClear();
++	}
++	else
++	{
++		jstring jroomId = env->NewStringUTF(roomId.c_str());
++		result = env->CallBooleanMethod(activity, methodID, jroomId);
++		env->DeleteLocalRef(jroomId);
++	}
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++void bleLeave()
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleLeave", "()V");
++	if (methodID == nullptr)
++		env->ExceptionClear();
++	else
++		env->CallVoidMethod(activity, methodID);
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++}
++
++bool bleBroadcast(const std::string &msgType, const std::vector<uint8_t> &payload)
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleBroadcast", "(Ljava/lang/String;[B)Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++	{
++		env->ExceptionClear();
++	}
++	else
++	{
++		jstring jmsgType = env->NewStringUTF(msgType.c_str());
++		jbyteArray jpayload = env->NewByteArray((jsize) payload.size());
++
++		if (jpayload != nullptr && !payload.empty())
++			env->SetByteArrayRegion(jpayload, 0, (jsize) payload.size(), (const jbyte *) payload.data());
++
++		result = env->CallBooleanMethod(activity, methodID, jmsgType, jpayload);
++		env->DeleteLocalRef(jmsgType);
++		env->DeleteLocalRef(jpayload);
++	}
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
++bool bleSend(const std::string &peerId, const std::string &msgType, const std::vector<uint8_t> &payload)
++{
++	JNIEnv *env = (JNIEnv*) SDL_GetAndroidJNIEnv();
++	jobject activity = (jobject) SDL_GetAndroidActivity();
++	jclass clazz = env->GetObjectClass(activity);
++
++	jmethodID methodID = env->GetMethodID(clazz, "bleSend", "(Ljava/lang/String;Ljava/lang/String;[B)Z");
++	jboolean result = false;
++
++	if (methodID == nullptr)
++	{
++		env->ExceptionClear();
++	}
++	else
++	{
++		jstring jpeerId = env->NewStringUTF(peerId.c_str());
++		jstring jmsgType = env->NewStringUTF(msgType.c_str());
++		jbyteArray jpayload = env->NewByteArray((jsize) payload.size());
++
++		if (jpayload != nullptr && !payload.empty())
++			env->SetByteArrayRegion(jpayload, 0, (jsize) payload.size(), (const jbyte *) payload.data());
++
++		result = env->CallBooleanMethod(activity, methodID, jpeerId, jmsgType, jpayload);
++		env->DeleteLocalRef(jpeerId);
++		env->DeleteLocalRef(jmsgType);
++		env->DeleteLocalRef(jpayload);
++	}
++
++	env->DeleteLocalRef(activity);
++	env->DeleteLocalRef(clazz);
++
++	return result;
++}
++
+ /* A container for AssetManager Java object */
+ class AssetManagerObject
+ {
+diff --git a/src/common/android.h b/src/common/android.h
+index eb65d863b..b05478ecb 100644
+--- a/src/common/android.h
++++ b/src/common/android.h
+@@ -26,6 +26,7 @@
+ #ifdef LOVE_ANDROID
+ 
+ #include <string>
++#include <vector>
+ 
+ namespace love
+ {
+@@ -70,6 +71,32 @@ void requestRecordingPermission();
+ 
+ void showRecordingPermissionMissingDialog();
+ 
++bool hasBluetoothPermission();
++
++void requestBluetoothPermission();
++
++bool hasBluetoothLE();
++
++std::string getBluetoothRadioState();
++
++std::string getBluetoothAdapterAddress();
++
++void bleApplyReliabilityConfig(double heartbeatInterval, int fragmentSpacingMs, int dedupWindow);
++
++std::string bleDebugState();
++
++bool bleHost(const std::string &room, int maxClients, const std::string &transport);
++
++bool bleScan();
++
++bool bleJoin(const std::string &roomId);
++
++void bleLeave();
++
++bool bleBroadcast(const std::string &msgType, const std::vector<uint8_t> &payload);
++
++bool bleSend(const std::string &peerId, const std::string &msgType, const std::vector<uint8_t> &payload);
++
+ /**
+  * Initialize Android AAsset virtual archive.
+  * @return true if successful.
+diff --git a/src/common/config.h b/src/common/config.h
+index e52e2209f..6a5c6533f 100644
+--- a/src/common/config.h
++++ b/src/common/config.h
+@@ -145,6 +145,7 @@
+ #else
+ #	define LOVE_ENABLE_LOVE
+ #	define LOVE_ENABLE_AUDIO
++#	define LOVE_ENABLE_BLE
+ #	define LOVE_ENABLE_DATA
+ #	define LOVE_ENABLE_EVENT
+ #	define LOVE_ENABLE_FILESYSTEM
+diff --git a/src/modules/love/love.cpp b/src/modules/love/love.cpp
+index fa62f4f9e..f821227cb 100644
+--- a/src/modules/love/love.cpp
++++ b/src/modules/love/love.cpp
+@@ -111,6 +111,9 @@ extern "C"
+ #if defined(LOVE_ENABLE_AUDIO)
+ 	extern int luaopen_love_audio(lua_State*);
+ #endif
++#if defined(LOVE_ENABLE_BLE)
++	extern int luaopen_love_ble(lua_State*);
++#endif
+ #if defined(LOVE_ENABLE_DATA)
+ 	extern int luaopen_love_data(lua_State*);
+ #endif
+@@ -183,6 +186,9 @@ static const luaL_Reg modules[] = {
+ #if defined(LOVE_ENABLE_AUDIO)
+ 	{ "love.audio", luaopen_love_audio },
+ #endif
++#if defined(LOVE_ENABLE_BLE)
++	{ "love.ble", luaopen_love_ble },
++#endif
+ #if defined(LOVE_ENABLE_DATA)
+ 	{ "love.data", luaopen_love_data },
+ #endif
