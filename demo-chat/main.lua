@@ -2,6 +2,7 @@ local utf8 = require("utf8")
 
 local ble_net = require("ble_net")
 local ble_ui = require("ble_ui")
+local diag = require("ble_diagnostics")
 
 local network = ble_net.new({
   title = "BLE Demo Chat",
@@ -13,21 +14,14 @@ local network = ble_net.new({
 local palette = ble_ui.palette
 local buttons = ble_ui.buttons
 local panel = ble_ui.panel
-local diag = require("ble_diagnostics")
 local app = network.state
+local fonts = {}
+
 local ui = {
   input = "",
   input_active = false,
   input_box = nil,
 }
-
-local fonts = {}
-local debug_enabled = true
-
-local function debug_log(text)
-  if not debug_enabled then return end
-  print("[demo-chat] " .. text)
-end
 
 local function set_input_active(active)
   ui.input_active = active and app.in_session or false
@@ -51,7 +45,7 @@ end
 
 local function start_host(transport) reset_ui_state(); network.start_host(transport) end
 local function start_scan() reset_ui_state(); network.start_scan() end
-local function leave_session() set_input_active(false); reset_ui_state(); network.leave_session() end
+local function leave_session() reset_ui_state(); network.leave_session() end
 
 local function send_chat()
   local sent = network.send_chat(ui.input)
@@ -72,8 +66,6 @@ local function draw_messages_card(x, y, w, h)
   local area_x = x + 14
   local area_y = y + 48
   local area_w = w - 28
-  local gap = 10
-  local cursor_y = y + h - 14
 
   if #app.messages == 0 then
     love.graphics.setColor(palette.dim)
@@ -82,22 +74,23 @@ local function draw_messages_card(x, y, w, h)
     return
   end
 
+  local gap = 10
+  local cursor_y = y + h - 14
   for i = #app.messages, 1, -1 do
     local item = app.messages[i]
-    local bubble_w = area_w
-    local _, wrapped = fonts.body:getWrap(item.text, bubble_w - 26)
+    local _, wrapped = fonts.body:getWrap(item.text, area_w - 26)
     local line_count = math.max(1, #wrapped)
     local bubble_h = 26 + fonts.small:getHeight() + line_count * fonts.body:getHeight() + 10
     local bubble_y = cursor_y - bubble_h
     if bubble_y < area_y then break end
 
     love.graphics.setColor(item.kind == "local" and palette.accent or palette.panel_alt)
-    love.graphics.rectangle("fill", area_x, bubble_y, bubble_w, bubble_h, 14, 14)
+    love.graphics.rectangle("fill", area_x, bubble_y, area_w, bubble_h, 14, 14)
     love.graphics.setColor(item.kind == "local" and {0.09, 0.08, 0.07} or palette.text)
     love.graphics.setFont(fonts.small)
     love.graphics.print(item.author, area_x + 12, bubble_y + 8)
     love.graphics.setFont(fonts.body)
-    love.graphics.printf(item.text, area_x + 12, bubble_y + 8 + fonts.small:getHeight() + 4, bubble_w - 24)
+    love.graphics.printf(item.text, area_x + 12, bubble_y + 8 + fonts.small:getHeight() + 4, area_w - 24)
     cursor_y = bubble_y - gap
   end
 end
@@ -169,7 +162,7 @@ local function draw_input_card(x, y, w, h)
   buttons.register(x + w - send_w - 12, y + 12, send_w, h - 24, "Send", send_chat, "accent")
 end
 
-local function draw_chat(width, height, metrics)
+local function draw_session(width, height, metrics)
   local x = metrics.margin
   local y = metrics.topbar_h + metrics.gap
   local w = width - metrics.margin * 2
@@ -188,26 +181,25 @@ local function draw_chat(width, height, metrics)
   draw_input_card(x, y + chat_h + info_h + metrics.gap * 2, w, input_h)
 end
 
-local function pointer_pressed(x, y)
-  debug_log(string.format("pointer %.1f, %.1f", x, y))
-  local btn = buttons.pressed(x, y)
-  if btn then
-    app.status = "Pressed " .. btn.label
-    debug_log("button hit: " .. btn.label)
-    return true
+local function handle_press(x, y)
+  if buttons.pressed(x, y) then
+    diag.on_pressed(x, y)
+    return
   end
+
+  diag.on_pressed(x, y)
 
   if app.in_session and ui.input_box then
     local box = ui.input_box
     local inside = x >= box.x and x <= box.x + box.w and y >= box.y and y <= box.y + box.h
     set_input_active(inside)
-    return inside
+    if inside then return end
   end
 
-  debug_log("pointer missed buttons")
   set_input_active(false)
-  return false
 end
+
+local touch_handled = false
 
 function love.load()
   love.keyboard.setKeyRepeat(true)
@@ -239,12 +231,12 @@ function love.draw()
     app = app,
     network = network,
     overlays = { diag.get_overlay() },
-    lobby_description = "Host a room or scan nearby devices. The portrait layout keeps every primary action reachable on a phone.",
+    lobby_description = "Host a room or scan nearby devices to start chatting.",
     start_host = start_host,
     start_scan = start_scan,
     transport = ble_net.TRANSPORT,
     draw_session = function()
-      draw_chat(width, height, metrics)
+      draw_session(width, height, metrics)
     end,
     extra_buttons = function()
       local btn_h = 28
@@ -254,13 +246,6 @@ function love.draw()
       end, "ghost")
     end,
   })
-end
-
-local touch_handled = false
-
-local function handle_press(x, y)
-  pointer_pressed(x, y)
-  diag.on_pressed(x, y)
 end
 
 function love.mousepressed(x, y, button)
@@ -307,17 +292,11 @@ end
 function love.keypressed(key)
   if key == "f1" then diag.toggle(); return end
   if diag.is_open() and (key == "escape" or key == "back") then diag.close(); return end
-  if key == "escape" then
+  if key == "back" or key == "escape" then
     if app.in_session then leave_session() end
     return
   end
-  if not app.in_session then
-    if key == "s" then start_scan()
-    elseif key == "h" then start_host(ble_net.TRANSPORT.NORMAL)
-    elseif key == "r" then start_host(ble_net.TRANSPORT.RESILIENT)
-    end
-    return
-  end
+  if not app.in_session then return end
   if key == "backspace" then
     local byteoffset = utf8.offset(ui.input, -1)
     if byteoffset then ui.input = string.sub(ui.input, 1, byteoffset - 1) end

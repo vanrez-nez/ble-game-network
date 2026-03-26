@@ -2,6 +2,8 @@ local ble = (love and love.ble) or require("love.ble")
 local config = require("ble_net.config")
 local dedup = require("ble_net.dedup")
 local validation = require("ble_net.validation")
+local alerts = require("ble_ui.alerts")
+local palette = require("ble_ui.palette")
 
 local transport = {}
 for k, v in pairs(ble.TRANSPORT) do transport[k] = v end
@@ -120,6 +122,11 @@ function M.new(opts)
 
   local notice_dedup = dedup.new({
     max_age = windows.notice_dedup_seconds,
+    max_count = limits.dedup_entries,
+  })
+
+  local message_dedup = dedup.new({
+    max_age = 5,
     max_count = limits.dedup_entries,
   })
 
@@ -250,6 +257,7 @@ function M.new(opts)
     state.is_host = false
     state.peer_statuses = {}
     notice_dedup:reset()
+    message_dedup:reset()
     self.refresh_live_state()
   end
 
@@ -386,6 +394,7 @@ function M.new(opts)
       state.local_id = ev.peer_id or state.local_id
       state.is_host = true
       self.push_notice("Hosting " .. self.transport_name(ev.transport) .. " room")
+      alerts.push("You started hosting", palette.success)
 
     elseif ev.type == "joined" then
       state.in_session = true
@@ -395,28 +404,39 @@ function M.new(opts)
       state.local_id = ev.peer_id or state.local_id
       state.is_host = false
       self.push_notice("Joined room " .. ev.room_id)
+      alerts.push("You joined the room", palette.success)
 
     elseif ev.type == "peer_joined" then
       set_roster(ev.peers)
       self.push_notice(ev.peer_id .. " joined")
+      local name = ev.peer_id == state.local_id and "You" or ev.peer_id
+      alerts.push(name .. " joined the room", palette.success)
 
     elseif ev.type == "peer_left" then
       set_roster(ev.peers)
       state.peer_statuses[ev.peer_id] = nil
       self.push_notice(ev.peer_id .. " left (" .. ev.reason .. ")")
+      local name = ev.peer_id == state.local_id and "You" or ev.peer_id
+      alerts.push(name .. " left the room", palette.danger)
 
     elseif ev.type == "peer_status" then
       state.peer_statuses[ev.peer_id] = ev.status
+      local name = ev.peer_id == state.local_id and "You" or ev.peer_id
       if ev.status == "reconnecting" then
         self.push_notice(ev.peer_id .. " reconnecting...")
+        alerts.push(name .. " reconnecting...", palette.accent)
       elseif ev.status == "connected" then
         self.push_notice(ev.peer_id .. " reconnected")
+        alerts.push(name .. " reconnected", palette.success)
       end
 
     elseif ev.type == "message" then
       if ev.msg_type == "chat" then
         local text = ev.payload and ev.payload.text or "<non-text payload>"
-        self.push_message(ev.peer_id, text, "remote")
+        local dedup_key = (ev.peer_id or "") .. ":" .. text
+        if message_dedup:record(dedup_key) then
+          self.push_message(ev.peer_id, text, "remote")
+        end
       end
 
     elseif ev.type == "session_migrating" then
@@ -432,8 +452,14 @@ function M.new(opts)
       end
       self.push_notice("Session resumed on " .. ev.new_host_id)
 
+    elseif ev.type == "join_failed" then
+      self.push_notice("Join rejected: " .. (ev.reason or "unknown"))
+      alerts.push("Join rejected: " .. (ev.reason or "unknown"), palette.danger)
+      self.reset_lobby()
+
     elseif ev.type == "session_ended" then
       self.push_notice("Session ended: " .. ev.reason)
+      alerts.push("Session ended: " .. ev.reason, palette.danger)
       self.reset_lobby()
 
     elseif ev.type == "radio" then

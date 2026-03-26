@@ -6,6 +6,7 @@ local topbar = require("ble_ui.topbar")
 local overlay = require("ble_ui.overlay")
 local draw = require("ble_ui.draw")
 local lobby = require("ble_ui.lobby")
+local alerts = require("ble_ui.alerts")
 
 local M = {
   palette = palette,
@@ -16,6 +17,7 @@ local M = {
   overlay = overlay,
   draw = draw,
   lobby = lobby,
+  alerts = alerts,
   layout_metrics = util.layout_metrics,
   clamp = util.clamp,
   safe_area = util.safe_area,
@@ -65,6 +67,9 @@ function M.draw_frame(opts)
   end
 
   buttons.render(fonts)
+
+  alerts.update()
+  alerts.draw(width, metrics, fonts)
 end
 
 return M
