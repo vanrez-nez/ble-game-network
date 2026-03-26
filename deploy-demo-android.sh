@@ -71,16 +71,14 @@ package_demo_archives() {
 
     echo "Packaging $demo_name as $archive_path..."
     rm -rf "$archive_root"
-    mkdir -p "$archive_root/ble_net" "$archive_root/ble_ui"
+    mkdir -p "$archive_root"
 
     if command -v rsync >/dev/null 2>&1; then
       rsync -a --delete --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$demo_dir"/ "$archive_root"/
-      rsync -a --delete --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$LUA_DIR/ble_net"/ "$archive_root/ble_net"/
-      rsync -a --delete --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$LUA_DIR/ble_ui"/ "$archive_root/ble_ui"/
+      rsync -a --exclude '.DS_Store' --exclude '*.swp' --exclude '*.bak' "$LUA_DIR"/ "$archive_root"/
     else
       cp -R "$demo_dir"/. "$archive_root"/
-      cp -R "$LUA_DIR/ble_net"/. "$archive_root/ble_net"/
-      cp -R "$LUA_DIR/ble_ui"/. "$archive_root/ble_ui"/
+      cp -R "$LUA_DIR"/. "$archive_root"/
     fi
 
     (
@@ -242,6 +240,20 @@ fi
 if [[ ! -f "$ANDROID_DIR/gradlew" ]]; then
   echo "error: love-android gradle wrapper not found: $ANDROID_DIR/gradlew" >&2
   exit 1
+fi
+
+if [[ -z "${ANDROID_HOME:-}" ]]; then
+  if [[ -d "$HOME/Library/Android/sdk" ]]; then
+    export ANDROID_HOME="$HOME/Library/Android/sdk"
+  fi
+fi
+
+if [[ -z "${JAVA_HOME:-}" ]]; then
+  if [[ -d "/opt/homebrew/opt/openjdk@17" ]]; then
+    export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
+  elif /usr/libexec/java_home -v 17 >/dev/null 2>&1; then
+    export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+  fi
 fi
 
 if [[ ! -d "$ANDROID_LOVE_DIR" ]]; then

@@ -14,6 +14,78 @@ local M = {
   validation = validation,
 }
 
+local function classify_diagnostic(msg)
+  if not msg then return nil, nil end
+  local s = tostring(msg)
+
+  -- Connection events
+  local dev = s:match("server connection state: device=(%S+)")
+  if dev then
+    if s:match("state=2") then return "connection", "Client connected" end
+    if s:match("state=0") then
+      local st = s:match("status=(%d+)") or "?"
+      return "connection", "Client disconnected (status " .. st .. ")"
+    end
+  end
+  dev = s:match("client connection state: device=(%S+)")
+  if dev then
+    if s:match("state=2") then return "connection", "Connected to host" end
+    if s:match("state=0") then
+      local st = s:match("status=(%d+)") or "?"
+      return "connection", "Disconnected from host (status " .. st .. ")"
+    end
+  end
+
+  -- Reconnect
+  if s:match("beginClientReconnect") then return "connection", "Reconnecting to host..." end
+  if s:match("completeReconnectResume") then return "connection", "Reconnected" end
+  if s:match("failReconnect") then return "connection", "Reconnection failed" end
+  local gp = s:match("beginPeerReconnectGrace peer=(%S+)")
+  if gp then return "connection", "Peer " .. gp .. " lost, waiting..." end
+  local ep = s:match("expirePeerReconnectGrace peer=(%S+)")
+  if ep then return "connection", "Peer " .. ep .. " timed out" end
+  local rp = s:match("peer reconnected peer=(%S+)")
+  if rp then return "connection", "Peer " .. rp .. " reconnected" end
+
+  -- HELLO / binding
+  local hp = s:match("received HELLO from peer=(%S+)")
+  if hp then return "connection", "Peer " .. hp .. " joined" end
+
+  -- Heartbeat
+  if s:match("heartbeat re%-broadcast") then return "heartbeat", "Heartbeat" end
+
+  -- Messages (host received)
+  local hfrom, htype = s:match("host received packet.-from=(%S+).-type=(%S+)")
+  if hfrom and htype then return "message", "Recv " .. htype .. " from " .. hfrom end
+  -- Messages (client received)
+  local cfrom, ctype = s:match("client received packet.-from=(%S+).-type=(%S+)")
+  if cfrom and ctype then return "message", "Recv " .. ctype .. " from " .. cfrom end
+  -- Messages (encode/send)
+  local etype = s:match("encodePacket.-kind=data.-type=(%S+)")
+  if etype then return "message", "Send " .. etype end
+  -- Messages (queue/relay)
+  local qt = s:match("client enqueuePacket.-type=(%S+)")
+  if qt then return "message", "Queued " .. qt end
+  local rt = s:match("host enqueueNotification.-type=(%S+)")
+  if rt then return "message", "Relay " .. rt end
+
+  -- Session
+  if s:match("host button pressed") then return "session", "Starting host..." end
+  if s:match("scan button pressed") then return "session", "Starting scan..." end
+  if s:match("^join room") or s:match("^connectToRoom") then return "session", "Joining room..." end
+  if s:match("leave button pressed") then return "session", "Leaving session" end
+  if s:match("^completeLocalJoin") then return "session", "Joined session" end
+  if s:match("advertise adv") then return "session", "Advertising room" end
+
+  -- Scan
+  if s:match("scan started") then return "scan", "Scanning..." end
+  local rn = s:match("onScanResult.-name=(%S+)")
+  if rn and rn ~= "" then return "scan", "Room found: " .. rn end
+
+  -- Everything else: drop
+  return nil, nil
+end
+
 local function default_state(title)
   return {
     rooms = {},
@@ -29,6 +101,7 @@ local function default_state(title)
     in_session = false,
     local_id = "",
     is_host = false,
+    peer_statuses = {},
   }
 end
 
@@ -44,6 +117,7 @@ function M.new(opts)
   local windows = settings.windows
   validation.set_limits(limits)
   local event_handler = nil
+
   local notice_dedup = dedup.new({
     max_age = windows.notice_dedup_seconds,
     max_count = limits.dedup_entries,
@@ -133,8 +207,14 @@ function M.new(opts)
   end
 
   function self.push_diagnostic(platform, text)
-    local label = "[" .. (platform or "?") .. "] " .. tostring(text or "")
-    state.diagnostics[#state.diagnostics + 1] = label
+    local cat, friendly = classify_diagnostic(text)
+    if not cat then return end
+    local entry = {
+      cat = cat,
+      text = friendly,
+      raw = "[" .. (platform or "?") .. "] " .. tostring(text or ""),
+    }
+    state.diagnostics[#state.diagnostics + 1] = entry
     if #state.diagnostics > limits.diagnostics then
       table.remove(state.diagnostics, 1)
     end
@@ -168,6 +248,7 @@ function M.new(opts)
     state.transport = nil
     state.in_session = false
     state.is_host = false
+    state.peer_statuses = {}
     notice_dedup:reset()
     self.refresh_live_state()
   end
@@ -220,6 +301,11 @@ function M.new(opts)
   end
 
   function self.broadcast_payload(msg_type, payload)
+    self.last_out = {
+      msg_type = msg_type,
+      payload = payload,
+      time = love.timer.getTime(),
+    }
     return ble.broadcast(msg_type, payload)
   end
 
@@ -257,14 +343,26 @@ function M.new(opts)
     end
 
     for i = 1, #state.diagnostics do
-      lines[#lines + 1] = state.diagnostics[i]
+      local d = state.diagnostics[i]
+      lines[#lines + 1] = type(d) == "table" and d.raw or tostring(d)
     end
 
     return table.concat(lines, "\n")
   end
 
+  self.last_in = nil
+  self.last_out = nil
+
   function self.handle_event(ev)
     debug_log("event: " .. tostring(ev.type))
+    if ev.type == "message" then
+      self.last_in = {
+        msg_type = ev.msg_type,
+        peer_id = ev.peer_id,
+        payload = ev.payload,
+        time = love.timer.getTime(),
+      }
+    end
     if ev.type == "room_found" then
       local idx = room_by_id(ev.room_id)
       if idx then
@@ -304,7 +402,16 @@ function M.new(opts)
 
     elseif ev.type == "peer_left" then
       set_roster(ev.peers)
+      state.peer_statuses[ev.peer_id] = nil
       self.push_notice(ev.peer_id .. " left (" .. ev.reason .. ")")
+
+    elseif ev.type == "peer_status" then
+      state.peer_statuses[ev.peer_id] = ev.status
+      if ev.status == "reconnecting" then
+        self.push_notice(ev.peer_id .. " reconnecting...")
+      elseif ev.status == "connected" then
+        self.push_notice(ev.peer_id .. " reconnected")
+      end
 
     elseif ev.type == "message" then
       if ev.msg_type == "chat" then
