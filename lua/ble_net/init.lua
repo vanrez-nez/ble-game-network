@@ -85,8 +85,8 @@ local function classify_diagnostic(msg)
   local rn = s:match("onScanResult.-name=(%S+)")
   if rn and rn ~= "" then return "scan", "Room found: " .. rn end
 
-  -- Everything else: drop
-  return nil, nil
+  -- Everything else: pass through as raw for debugging
+  return "raw", s
 end
 
 local function default_state(title)

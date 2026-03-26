@@ -250,3 +250,87 @@ This gap leaves iOS implementations without a spec-defined recovery path when `u
 | §15.2 defines no failure handling for notification sends | Spec gap | Critical |
 | Max concurrent assemblies not enforced on iOS | Code divergence | Major |
 | MTU 185 not proactively requested on iOS | Code divergence | Medium |
+
+---
+
+## Fix Attempts Log (2026-03-26, debugging session with remote TCP logs)
+
+### Setup: TCP Log Server
+
+Added a TCP log server to `ble_log.lua` (replacing the ENet-based server) so logs can be pulled from devices via `nc <ip> 4400`. Commands: `tail <n>`, `since <minutes>`, `follow`, `status`. Server status shown on debug overlay via `ble_log.server_state`. Required `pcall(require, "socket")` for safe loading on iOS, and `"0.0.0.0"` bind instead of `"*"`.
+
+Also added `"raw"` catch-all category to `classify_diagnostic()` in `ble_net/init.lua` so ALL native `bleLog()` entries (including `incomingFragment`, `fragmentPacket`, etc.) are captured in the TCP log, not just classified events.
+
+### Key finding from raw logs
+
+With `raw` logging enabled, `incomingFragment` entries (logged inside `processIncomingFragment` at the top of `didReceiveWriteRequests` processing) **stop entirely** after 6-15 fragments. This proves **CoreBluetooth stops calling `didReceiveWriteRequests`** — the issue is not in packet validation, dedup, fragment assembly, or any application-level logic. The delegate method simply stops being invoked.
+
+Meanwhile, `enqueueNotification` entries continue indefinitely — iOS keeps sending notifications via `updateValue:forCharacteristic:` without issue.
+
+### Attempt 1: Single `respondToRequest:` per batch
+
+**Theory:** Apple docs say `respondToRequest:withResult:` must be called exactly once per `didReceiveWriteRequests:` invocation. The original code called it once per request in the loop, potentially desynchronizing CoreBluetooth's internal write-response tracking.
+
+**Change:** Split into validate-all → respond-once → process-all. Respond with `requests.firstObject` after validating the batch.
+
+**Result:** Did not fix the issue. Messages lasted slightly longer (~4s vs ~1s in some runs) but writes still stopped. The fix was correct per Apple API contract but was not the root cause.
+
+**File:** `Ble.mm` `didReceiveWriteRequests:` (line ~2681)
+
+### Attempt 2: `peripheralManagerIsReadyToUpdateSubscribers:` respect fragment spacing
+
+**Theory:** The `peripheralManagerIsReadyToUpdateSubscribers:` callback drained the notification queue in a tight `while` loop, bypassing the 15ms fragment spacing used by `pumpNotificationQueueForCentral:`. This could flood the BLE link and starve inbound writes.
+
+**Change:** Replaced the tight `while` loop with calls to `pumpNotificationQueueForCentral:` (which respects 15ms spacing).
+
+**Result:** Did not fix the issue. Same behavior.
+
+**File:** `Ble.mm` `peripheralManagerIsReadyToUpdateSubscribers:` (line ~2652)
+
+### Attempt 3: Dedicated serial dispatch queue for CoreBluetooth
+
+**Theory:** Both `CBCentralManager` and `CBPeripheralManager` delegates and the notification pump `dispatch_after` blocks all run on `dispatch_get_main_queue()`. Under load, write request delivery could stall on the main queue while notifications continue flowing.
+
+**Change:** Created `dispatch_queue_create("love.ble.delegate", DISPATCH_QUEUE_SERIAL)` and used it for both managers and all `dispatch_after` calls.
+
+**Result:** Did not fix the issue. Reverted. (Note: moving off main queue may cause thread-safety issues with Lua callbacks that expect main thread execution.)
+
+**File:** `Ble.mm` init (line ~552) + all `dispatch_after` calls
+
+### Attempt 4: Defer packet processing after `respondToRequest:`
+
+**Theory:** Processing packets inside `didReceiveWriteRequests` triggers notification sends via `enqueueNotificationPacketData` → `pumpNotificationQueueForCentral` → `updateValue:`. These outgoing notifications could fill the transmit buffer before the ATT write response from `respondToRequest:` has been flushed, blocking the central's write pipeline.
+
+**Change:** Collected fragment data into an array, responded to all writes immediately, returned from the delegate, then processed packets via `dispatch_async(dispatch_get_main_queue(), ...)`.
+
+**Result:** Did not fix the issue. Same behavior — `incomingFragment` entries still stop after a few seconds.
+
+**File:** `Ble.mm` `didReceiveWriteRequests:` (line ~2681)
+
+### Attempt 5: Remove `CBCharacteristicPropertyWriteWithoutResponse`
+
+**Theory:** The characteristic was created with both `Write` and `WriteWithoutResponse` properties (line 1701). The spec (§2) only defines Read, Write, Notify. Some Android BLE stacks default to write-without-response when both properties are present, bypassing ATT-level flow control and allowing Android to blast writes faster than iOS can process them.
+
+**Change:** Removed `CBCharacteristicPropertyWriteWithoutResponse` from the characteristic properties.
+
+**Result:** Did not fix the issue. Same behavior.
+
+**File:** `Ble.mm` characteristic creation (line ~1700)
+
+### What we know for certain
+
+1. **`didReceiveWriteRequests` stops being called** — confirmed by `incomingFragment` log entries stopping entirely (not filtered by validation/dedup)
+2. **Outbound notifications continue working** — iOS keeps sending pings and heartbeats via `updateValue:` after inbound stops
+3. **No BLE disconnect occurs** — no `didUnsubscribeFromCharacteristic:` or connection state change logged
+4. **Android keeps sending writes** — `client enqueuePacket` entries continue, no `write_failed` or `send_failed` errors
+5. **MTU is 512** — single-fragment packets, no fragmentation pressure
+6. **Timing varies** — 1-12 seconds after connection, sometimes works fine
+7. **Only when iOS hosts** — never happens with Android as host
+8. **Multiple iOS-side fixes had no effect** — the problem may be in the Android write path or a CoreBluetooth internal issue that cannot be worked around from the delegate level
+
+### Open questions
+
+- Is Android's `onCharacteristicWrite` callback still firing after the cutoff? (No logging on success in current code)
+- Could `clientWriteInFlight` be stuck `true` on Android, preventing further writes from being sent?
+- Is this a known CoreBluetooth regression on specific iOS versions?
+- Would switching to `WriteWithoutResponse` exclusively (with application-level flow control) avoid the issue?
