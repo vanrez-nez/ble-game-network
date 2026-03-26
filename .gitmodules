@@ -1,0 +1,8 @@
+[submodule "love"]
+	path = love
+	url = https://github.com/vanrez-nez/love.git
+	branch = ble-module
+[submodule "love-android"]
+	path = love-android
+	url = https://github.com/vanrez-nez/love-android.git
+	branch = ble-module
