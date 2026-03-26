@@ -6,7 +6,7 @@ This repo contains a BLE communication layer for LÖVE.
 
 BLE means Bluetooth Low Energy: short-range wireless communication between nearby devices without relying on the internet.
 
-In a game, you use it to host nearby rooms, discover them, join sessions, and exchange gameplay messages through `lua/ble_net` on top of patched native LÖVE builds.
+In a game, you use it to host nearby rooms, discover them, join sessions, and exchange gameplay messages through `lua/ble_net` on top of forked native LÖVE builds.
 
 Transport modes:
 
@@ -106,27 +106,17 @@ Main event types returned through polling / `ble_net`:
 
 ### Vendor Setup
 
-Apply the native BLE patches to the vendor repos:
+The native BLE code lives in forked vendor repos, tracked as git submodules:
+
+- `love` → [vanrez-nez/love](https://github.com/vanrez-nez/love/tree/ble-module) (branch `ble-module`)
+- `love-android` → [vanrez-nez/love-android](https://github.com/vanrez-nez/love-android/tree/ble-module) (branch `ble-module`)
+
+`love-android` also references the love fork as an inner submodule at `app/src/main/cpp/love`.
+
+After cloning, initialize all submodules:
 
 ```bash
-./scripts/apply-vendor-patches.sh
-```
-
-Normal native development happens in:
-
-- `love`
-- `love-android`
-
-When Android native engine files change in `love`, sync the vendored Android engine copy:
-
-```bash
-./scripts/sync-android-vendor-love.sh
-```
-
-When you want to freeze the current native state back into patch files:
-
-```bash
-./scripts/export-vendor-patches.sh
+git submodule update --init --recursive
 ```
 
 ### iOS
@@ -159,10 +149,9 @@ The script:
 - copies those demos into the app games folder
 - lets the LOVE launcher list and open them
 
-### Vendor Patch Bases
+### Upstream Bases
 
-Current frozen patch bases:
+The forks diverge from these upstream commits:
 
-- `love`: `ab8dfaa1da571d6ebb09ff1fccb91e5039fce7a0`
-- `love-android`: `007d258cb477e51a08229f3d35179966da6e22d3`
-- `love-android/app/src/main/cpp/love`: `5670df13b6980afd025cd7e7d442a24499bf86a7`
+- `love`: [`ab8dfaa`](https://github.com/love2d/love/commit/ab8dfaa1da571d6ebb09ff1fccb91e5039fce7a0)
+- `love-android`: [`007d258`](https://github.com/love2d/love-android/commit/007d258cb477e51a08229f3d35179966da6e22d3)
