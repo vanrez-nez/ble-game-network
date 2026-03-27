@@ -17,8 +17,6 @@ LAUNCH_APP=1
 DEVICE_SERIAL=""
 SHOW_LOGCAT=0
 LOGCAT_LIVE=0
-CLEAN_NATIVE=1
-
 DEMO_DIRS=()
 DEMO_ARCHIVES=()
 
@@ -39,7 +37,6 @@ Options:
   --record        Build the microphone-enabled variant
   --build-only    Build only, skip adb install and launch
   --no-launch     Install and copy demos, but do not launch the app
-  --no-clean      Reuse existing Gradle/CMake native outputs
   --logcat        Print filtered app logcat output and exit
   --logcat-live   Stream filtered app logcat output until interrupted
   --serial SERIAL Use a specific adb device serial
@@ -112,9 +109,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-launch)
       LAUNCH_APP=0
-      ;;
-    --no-clean)
-      CLEAN_NATIVE=0
       ;;
     --logcat)
       SHOW_LOGCAT=1
@@ -261,20 +255,6 @@ fi
 
 package_demo_archives
 
-if [[ "$CLEAN_NATIVE" -eq 1 ]]; then
-  echo "Syncing engine sources into love-android..."
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -r --delete --exclude '.git' --exclude '.DS_Store' --exclude 'build/' --exclude '.cxx' --exclude '*.o' "$LOVE_DIR"/ "$ANDROID_LOVE_DIR"/
-  else
-    echo "error: rsync is required to sync the engine sources for Android builds" >&2
-    exit 1
-  fi
-
-  echo "Clearing stale native build outputs..."
-  rm -rf "$ANDROID_DIR/app/.cxx"
-else
-  echo "Reusing cached engine sources and native outputs (--no-clean)"
-fi
 
 VARIANT="Normal${RECORDING}${BUILD_TYPE}"
 ASSEMBLE_TASK=":app:assemble${VARIANT}"
