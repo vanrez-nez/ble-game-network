@@ -34,7 +34,7 @@ Both proposals independently identified this as the highest-priority gap. The de
 
 - **From Proposal A:** Reconnect-guard conditions are added to the derivation (steps 2b, 2c). These suppress `shouldEmit` when a disconnect callback fires for a stale GATT connection during an active reconnect or migration join attempt. Without these guards, a disconnect for a *previous* connection can trigger recovery logic that conflicts with the already-in-progress join. Both platforms store the current device reference (`clientGatt` on Android, `_connectedPeripheral` on iOS), making this check implementable without new state.
 
-- **From Proposal B (Item 4):** Steps 6 and 7 reference `FinishLeaveClient()` instead of `FinishLeave(null)`, matching the actual implementation behavior and protecting host state during migration (see Change 4).
+- **From Proposal B (Item 4):** Steps 7 and 8 reference `FinishLeaveClient()` instead of `FinishLeave(null)`, matching the actual implementation behavior and protecting host state during migration (see Change 4).
 
 Proposal B's simpler derivation (`NOT clientLeaving` only, without device-identity guards) was considered but rejected as insufficient. The stale-disconnect race condition identified by Proposal A is real: when `ConnectToRoom` calls `StopClientOnly()` and then initiates a new GATT connection, the disconnect callback for the *old* connection arrives with `clientLeaving=false`, producing `shouldEmit=true` and triggering spurious recovery. The device-identity guards close this gap.
 
@@ -99,7 +99,7 @@ Add a `"client_leaving"` control message from client to host to signal intention
 
 Both proposals agree on the problem (curated issue I-1) and the solution shape: a best-effort message sent before disconnect, with the grace timer as fallback. The merge takes the architectural approach from each:
 
-- **From Proposal B:** The host records the departure *intent* on message receipt but does not immediately remove the peer. The actual removal happens in the existing `OnHostClientDisconnected` handler when the disconnect callback fires and finds a recorded departure intent. This two-phase design keeps removal logic in one code path and avoids the race condition that Proposal A's immediate-removal approach creates (where the host might process both the departure message and the disconnect callback as independent removal events).
+- **From Proposal B:** The host records the departure *intent* on message receipt but does not immediately remove the peer. The actual removal happens in the existing `OnHostClientDisconnected` handler when the disconnect callback fires and finds a recorded departure intent. This two-phase design keeps removal logic in one code path and avoids a race condition present in Proposal A's immediate-removal approach. In Proposal A, the departure handler removes the peer from the connected clients map and Session Peer roster immediately. When the subsequent BLE disconnect callback fires, `OnHostClientDisconnected` looks up the Peer ID from the device-peer map (which was not cleared by the departure handler), finds it, and proceeds to step 3c — calling `BeginPeerReconnectGrace()` for a peer already removed from the roster. This double-processing is an architectural flaw. Proposal B's record-and-check pattern avoids it entirely by keeping all removal in the disconnect handler.
 
 - **From Proposal A:** The message name `"client_leaving"` is adopted over Proposal B's `"departure"` to maintain the directional naming convention used by other control messages (`peer_joined`, `peer_left`, `session_migrating`). The `clientLeaving` flag is set before scheduling the departure delay, matching the existing flag semantics.
 
@@ -541,9 +541,9 @@ Proposal B's derivation of `shouldEmit = NOT clientLeaving` without device-ident
 
 ### Rejected: Proposal A — Immediate peer removal in departure handler (Item 2)
 
-Proposal A's `OnClientLeavingReceived` handler immediately removed the peer from the roster, broadcast `peer_left` and `roster_snapshot`, and updated the advertisement. This creates a race: the same peer may be removed twice (once by the departure handler, once by the disconnect callback).
+Proposal A's `OnClientLeavingReceived` handler immediately removed the peer from the roster, broadcast `peer_left` and `roster_snapshot`, and updated the advertisement. This creates a race: when the BLE disconnect callback subsequently fires, `OnHostClientDisconnected` finds the Peer ID via the device-peer map (which was not cleared by the departure handler), attempts to process it, and may call `BeginPeerReconnectGrace()` for a peer already removed from the roster.
 
-**Reason:** Architectural mismatch. Removing peers in two separate code paths (departure handler and disconnect handler) violates the single-responsibility principle for roster mutation. Proposal B's two-phase design (record intent, remove on disconnect) is cleaner.
+**Reason:** Architectural mismatch. Removing peers in two separate code paths (departure handler and disconnect handler) violates the single-responsibility principle for roster mutation. Proposal B's two-phase design (record intent, remove on disconnect) keeps all removal in one path.
 
 ### Rejected: Proposal B — Immediate FailReconnect/FailMigration on GATT connection failure (Item 3)
 
