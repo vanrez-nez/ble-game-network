@@ -29,7 +29,11 @@ local Button = {
     end
 
     if self.label and self.label ~= "" and self.font then
-      lg.setColor(self.textColor)
+      if not self.interactable then
+        lg.setColor(self.textColor[1], self.textColor[2], self.textColor[3], 0.35)
+      else
+        lg.setColor(self.textColor)
+      end
       lg.setFont(self.font)
       local textY = self.y + math.floor((self.height / 2) - (self.font:getHeight() / 2))
       lg.printf(self.label, self.x + 10, textY, self.width - 20, "center")

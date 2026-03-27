@@ -62,6 +62,7 @@ local function handle_event(ev)
   elseif ev.type == "session_ended" then
     peers = {}
   elseif ev.type == "message" then
+    if not ev.payload then return end
     if ev.msg_type == "ping" then
       local p = get_peer(ev.peer_id)
       p.flash_recv = love.timer.getTime()

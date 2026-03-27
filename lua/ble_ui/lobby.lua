@@ -31,18 +31,21 @@ function M.draw(width, height, metrics, opts)
   love.graphics.setColor(palette.dim)
   love.graphics.printf(description, panel_x + 18, cursor_y, panel_w - 36)
 
+  local busy = app.busy
+  local disable = busy and {interactable = false} or nil
+
   cursor_y = cursor_y + 64
   buttons.register(panel_x + 18, cursor_y, panel_w - 36, metrics.button_h, "Host Normal", function()
     start_host(transport.NORMAL)
-  end, "accent")
+  end, "accent", disable)
 
   cursor_y = cursor_y + metrics.button_h + metrics.gap
   buttons.register(panel_x + 18, cursor_y, panel_w - 36, metrics.button_h, "Host Resilient", function()
     start_host(transport.RESILIENT)
-  end, "accent")
+  end, "accent", disable)
 
   cursor_y = cursor_y + metrics.button_h + metrics.gap
-  buttons.register(panel_x + 18, cursor_y, panel_w - 36, metrics.button_h, "Scan Rooms", start_scan)
+  buttons.register(panel_x + 18, cursor_y, panel_w - 36, metrics.button_h, "Scan Rooms", start_scan, nil, disable)
 
   cursor_y = cursor_y + metrics.button_h + 18
   love.graphics.setColor(palette.text)
@@ -74,7 +77,7 @@ function M.draw(width, height, metrics, opts)
     local room = app.rooms[i]
     draw.room_card(room, panel_x + 18, cursor_y, panel_w - 36, function()
       network.join_room(room.room_id, room.name)
-    end, fonts, network)
+    end, fonts, network, disable)
     cursor_y = cursor_y + card_step
   end
 end

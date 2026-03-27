@@ -106,6 +106,7 @@ local function default_state(title)
     in_session = false,
     local_id = "",
     is_host = false,
+    busy = false,
     peer_statuses = {},
   }
 end
@@ -260,6 +261,7 @@ function M.new(opts)
     state.transport = nil
     state.in_session = false
     state.is_host = false
+    state.busy = false
     state.peer_statuses = {}
     notice_dedup:reset()
     message_dedup:reset()
@@ -274,6 +276,7 @@ function M.new(opts)
     end
 
     self.reset_lobby()
+    state.busy = true
     state.transport = resolved_transport
     state.status = "Starting host..."
     debug_log("host button pressed: " .. self.transport_name(resolved_transport))
@@ -300,6 +303,7 @@ function M.new(opts)
     end
 
     local room_label = validation.room_name(room_name) or resolved_room_id or "room"
+    state.busy = true
     state.status = "Joining " .. room_label .. "..."
     debug_log("join room: " .. tostring(resolved_room_id))
     ble.join(resolved_room_id)
@@ -392,6 +396,7 @@ function M.new(opts)
       end
 
     elseif ev.type == "hosted" then
+      state.busy = false
       state.in_session = true
       state.session_id = ev.session_id
       state.transport = ev.transport
@@ -402,6 +407,7 @@ function M.new(opts)
       alerts.push("You started hosting", palette.success)
 
     elseif ev.type == "joined" then
+      state.busy = false
       state.in_session = true
       state.session_id = ev.session_id
       state.transport = ev.transport
