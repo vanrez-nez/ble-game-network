@@ -6,9 +6,11 @@ local alerts = require("ble_ui.alerts")
 local palette = require("ble_ui.palette")
 local ble_log = require("ble_log")
 
-local transport = {}
-for k, v in pairs(ble.TRANSPORT) do transport[k] = v end
-transport.NORMAL = ble.TRANSPORT.RELIABLE
+local transport = {
+  RELIABLE = "reliable",
+  RESILIENT = "resilient",
+  NORMAL = "reliable",
+}
 
 local M = {
   TRANSPORT = transport,
@@ -156,7 +158,7 @@ function M.new(opts)
   end
 
   function self.transport_name(value)
-    if value == ble.TRANSPORT.RESILIENT then
+    if value == transport.RESILIENT then
       return "Resilient"
     end
     return "Normal"
@@ -265,7 +267,7 @@ function M.new(opts)
   end
 
   function self.start_host(transport)
-    local resolved_transport = validation.transport(transport, ble.TRANSPORT)
+    local resolved_transport = validation.transport(transport, M.TRANSPORT)
     if not resolved_transport then
       self.push_notice("Invalid transport for host")
       return false

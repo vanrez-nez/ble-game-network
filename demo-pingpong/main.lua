@@ -55,6 +55,8 @@ local function handle_event(ev)
     peers = {}
   elseif ev.type == "joined" then
     peers = {}
+  elseif ev.type == "session_resumed" then
+    peers = {}
   elseif ev.type == "peer_left" then
     peers[ev.peer_id] = nil
   elseif ev.type == "session_ended" then
@@ -75,9 +77,9 @@ local function handle_event(ev)
   end
 end
 
-local function start_host()
+local function start_host(transport)
   peers = {}
-  network.start_host(ble_net.TRANSPORT.NORMAL)
+  network.start_host(transport)
 end
 
 local function start_scan()
@@ -94,6 +96,7 @@ local touch_handled = false
 
 local function handle_press(x, y)
   buttons.pressed(x, y)
+  diag.on_pressed(x, y)
 end
 
 function love.load()
@@ -120,41 +123,6 @@ function love.update(dt)
       if now - p.last_ping_sent >= PING_INTERVAL then
         send_ping(peer.peer_id)
       end
-    end
-  end
-end
-
-local function draw_lobby(width, height, metrics)
-  local x = metrics.margin
-  local y = metrics.topbar_h + metrics.gap + 20
-  local w = width - metrics.margin * 2
-
-  love.graphics.setFont(fonts.body)
-  love.graphics.setColor(palette.dim)
-  love.graphics.printf("Host or scan to start ping-pong between all connected devices.", x, y, w, "center")
-
-  y = y + 50
-  buttons.register(x + 10, y, w - 20, 44, "Host", start_host, "accent")
-  y = y + 54
-  buttons.register(x + 10, y, w - 20, 44, "Scan", start_scan)
-
-  y = y + 70
-  love.graphics.setFont(fonts.subsection)
-  love.graphics.setColor(palette.text)
-  love.graphics.printf("Rooms", x, y, w, "center")
-
-  y = y + 28
-  if #app.rooms == 0 then
-    love.graphics.setFont(fonts.small)
-    love.graphics.setColor(palette.dim)
-    love.graphics.printf("No rooms found.", x, y, w, "center")
-  else
-    for i = 1, math.min(#app.rooms, 4) do
-      local room = app.rooms[i]
-      buttons.register(x + 10, y, w - 20, 36, room.name .. " (" .. room.peer_count .. ")", function()
-        network.join_room(room.room_id, room.name)
-      end)
-      y = y + 44
     end
   end
 end
