@@ -158,7 +158,11 @@ commit_step() {
 	fi
 
 	git -C "$ROOT_DIR" add "$@"
-	git -C "$ROOT_DIR" commit -m "spec($_step_name): $_message [v${NEXT_VERSION}]"
+	if ! git -C "$ROOT_DIR" diff --cached --quiet; then
+		git -C "$ROOT_DIR" commit -m "spec($_step_name): $_message [v${NEXT_VERSION}]"
+	else
+		info "no changes to commit for $_step_name"
+	fi
 }
 
 # ── Step 1: Issues (serial) ──────────────────────────────────────────
@@ -182,6 +186,7 @@ run_issues() {
 
 	claude --agent spec-issues -p \
 		--model "$MODEL" \
+		--dangerously-skip-permissions \
 		"Read the current specification baseline at $SPEC_BASELINE.
 Read the existing master backlogs:
 - $BACKLOG_DIR/issues.md
@@ -197,7 +202,7 @@ Update the master backlog files:
 - Write features to $BACKLOG_DIR/features.md
 
 Preserve existing entries. Add new ones, update statuses of changed ones." \
-		> "$log_file" 2>&1
+		2>&1 | tee "$log_file"
 
 	info "issues scan complete: $BACKLOG_DIR/{issues,features}.md"
 
@@ -229,6 +234,7 @@ run_curate() {
 
 	claude --agent spec-curator -p \
 		--model "$MODEL" \
+		--dangerously-skip-permissions \
 		"Read the master backlogs:
 - $BACKLOG_DIR/issues.md
 - $BACKLOG_DIR/features.md
@@ -241,7 +247,7 @@ Write the curated scope to:
 - $ISSUES_FILE
 
 Follow the role instructions for selection criteria and format." \
-		> "$log_file" 2>&1
+		2>&1 | tee "$log_file"
 
 	[ -f "$FEATURES_FILE" ] \
 		|| error "curator agent completed but features file not found: $FEATURES_FILE"
@@ -279,6 +285,7 @@ run_proposals() {
 
 		claude --agent spec-proposal -p \
 			--model "$MODEL" \
+			--dangerously-skip-permissions \
 			"Your proposal ID is: ${id}.
 Read the baseline specification at $SPEC_BASELINE.
 Read the feature backlog at $FEATURES_FILE.
@@ -354,13 +361,14 @@ run_merge() {
 
 	claude --agent spec-referee -p \
 		--model "$MODEL" \
+		--dangerously-skip-permissions \
 		"Read the baseline specification at $SPEC_BASELINE.
 Read the following proposals:
 $proposal_refs
 
 Produce the consolidated merge document.
 Write it to $output_file following the role instructions exactly." \
-		> "$log_file" 2>&1
+		2>&1 | tee "$log_file"
 
 	[ -f "$output_file" ] \
 		|| error "referee agent completed but output not found: $output_file"
@@ -398,12 +406,13 @@ run_review() {
 
 	claude --agent spec-observer -p \
 		--model "$MODEL" \
+		--dangerously-skip-permissions \
 		"Read the referee's consolidated output at $NEXT_DIR/merge.md.
 Read the original proposals:
 $proposal_refs
 
 Write your observations to $output_file following the role instructions exactly." \
-		> "$log_file" 2>&1
+		2>&1 | tee "$log_file"
 
 	[ -f "$output_file" ] \
 		|| error "observer agent completed but output not found: $output_file"
@@ -435,11 +444,12 @@ run_amends() {
 
 	claude --agent spec-amends -p \
 		--model "$MODEL" \
+		--dangerously-skip-permissions \
 		"Read your consolidated specification at $NEXT_DIR/merge.md.
 Read the external observer's review at $NEXT_DIR/review.md.
 
 Write the amendment record to $output_file following the role instructions exactly." \
-		> "$log_file" 2>&1
+		2>&1 | tee "$log_file"
 
 	[ -f "$output_file" ] \
 		|| error "amends agent completed but output not found: $output_file"
@@ -479,6 +489,7 @@ run_editor() {
 
 	claude --agent spec-editor -p \
 		--model "$MODEL" \
+		--dangerously-skip-permissions \
 		"You have the complete document lineage:
 
 Proposals:
@@ -493,7 +504,7 @@ Read all documents in the lineage.
 Produce the final publication-ready specification.
 The version number for this cycle is ${NEXT_VERSION}.0.0.
 Write it to $output_file following the role instructions exactly." \
-		> "$log_file" 2>&1
+		2>&1 | tee "$log_file"
 
 	[ -f "$output_file" ] \
 		|| error "editor agent completed but output not found: $output_file"

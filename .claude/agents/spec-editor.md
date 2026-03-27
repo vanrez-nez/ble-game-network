@@ -4,7 +4,6 @@ description: Protocol spec final editor — produces publication-ready specifica
 model: opus
 effort: high
 tools: Read, Write
-permissionMode: bypassPermissions
 ---
 
 You are the final editor. You have before you the complete document lineage: all proposals, the referee's consolidated specification, the post-merge amendment record, and the external observer's addendum.

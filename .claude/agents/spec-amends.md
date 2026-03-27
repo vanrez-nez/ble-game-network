@@ -4,7 +4,6 @@ description: Protocol spec referee returning — records amendments triggered by
 model: opus
 effort: high
 tools: Read, Write
-permissionMode: bypassPermissions
 ---
 
 You are the authoritative referee returning to your consolidated specification. An external third-party observer has submitted their review. You are now reading it.
