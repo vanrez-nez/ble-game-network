@@ -11,7 +11,7 @@
 
 | Term | Definition |
 |------|-----------|
-| **shouldEmit** | A boolean derived at the moment of client disconnection from `NOT clientLeaving`, captured before `StopClientOnly()` executes, that controls whether the disconnect decision tree may emit events or initiate recovery procedures. |
+| **shouldEmit** | A boolean derived at the moment of client disconnection that controls whether the disconnect decision tree may emit events or initiate recovery procedures. Derived from `clientLeaving` and, when a reconnect or migration join is in progress, from device-identity comparison against the current join target. Captured before `StopClientOnly()` executes. |
 | **FinishLeaveClient** | A client-only teardown procedure that cleans up GATT client state, write queues, dedup state, and fragment assemblies without affecting host state. Distinguished from the full `FinishLeave()` which tears down all session state including host. |
 | **Departure Message** | A `"client_leaving"` control packet sent from client to host immediately before intentional disconnection, enabling the host to bypass reconnect grace for that peer. Best-effort delivery; the grace timer is the fallback. |
 | **Connection Failure** | A GATT-level event indicating that a connection attempt did not result in a connected state, distinct from a disconnection of an established connection. |
@@ -556,6 +556,42 @@ Proposal B called `FailReconnect()` on GATT connection failure during reconnect,
 Curated issue I-6 (minor severity) was not addressed by either proposal. Neither proposal's scope included permission handling. This issue remains open for a future revision.
 
 **Reason:** Out of scope for both proposals. Deferred.
+
+---
+
+## Dependency Graph
+
+```
+Change 1 (shouldEmit) ──depends on──> Change 4 (FinishLeaveClient)
+   Steps 7a/8a reference FinishLeaveClient()
+
+Change 3 (GATT failure) ──depends on──> Change 4 (FinishLeaveClient)
+   Step 8d references FinishLeaveClient()
+
+Change 3 (GATT failure) ──interacts with──> Change 1 (shouldEmit)
+   Reconnect-guard conditions in Change 1 (steps 2b/2c) protect against
+   stale disconnect callbacks from failed connections in Change 3
+
+Change 2 (departure message) ──independent──
+Change 5 (lifecycle triggers) ──independent──
+Change 6 (post-election convergence) ──independent──
+Change 7 (migration acceptance window) ──independent──
+Change 8 (MaxClients clarification) ──independent──
+```
+
+Changes 1, 3, and 4 form an interdependent group and MUST be adopted together. All other changes are independent and may be adopted individually.
+
+---
+
+## Consolidated Section 17 Additions
+
+All new constants introduced by this specification:
+
+| Constant | Default | Purpose | Introduced by |
+|----------|---------|---------|---------------|
+| Departure Send Timeout | 100ms | Max time client waits for departure message write callback before proceeding with disconnect | Change 2 |
+| Departure Intent Expiry | 2s | Max time between receiving a departure intent and the corresponding disconnect callback for the intent to be honored | Change 2 |
+| Migration Acceptance Window | 3s | Duration after successor begins hosting during which `migration_resume` join intents are accepted | Change 7 |
 
 ---
 
