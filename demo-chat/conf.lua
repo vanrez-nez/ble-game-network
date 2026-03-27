@@ -6,7 +6,7 @@ function love.conf(t)
   t.window.height = 860
   t.window.fullscreen = true
   t.highdpi = true
-  t.console = false
+  t.console = true
   t.modules.audio = false
   t.modules.joystick = false
   t.modules.physics = false
