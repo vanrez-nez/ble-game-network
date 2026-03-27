@@ -98,16 +98,6 @@ package_demo_archives() {
   done
 }
 
-require_ble_modules() {
-  if [[ -f "$LOVE_DIR/src/modules/ble/wrap_Ble.cpp" && -f "$ANDROID_DIR/app/src/main/java/org/love2d/android/ble/BleManager.java" && -f "$ANDROID_LOVE_DIR/src/modules/ble/wrap_Ble.cpp" ]]; then
-    return 0
-  fi
-
-  echo "error: BLE modules are not present in the current vendor checkouts" >&2
-  echo "apply the vendor patches explicitly or keep developing in patched vendor checkouts before deploying" >&2
-  exit 1
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --release)
@@ -238,7 +228,7 @@ if [[ "$SHOW_LOGCAT" -eq 1 ]]; then
 fi
 
 discover_demo_dirs
-require_ble_modules
+
 
 if [[ ! -d "$LOVE_DIR" ]]; then
   echo "error: engine source directory not found: $LOVE_DIR" >&2

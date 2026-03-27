@@ -61,16 +61,6 @@ discover_demo_dirs() {
   fi
 }
 
-require_ble_module() {
-  if [[ -f "$LOVE_DIR/src/modules/ble/wrap_Ble.cpp" ]]; then
-    return 0
-  fi
-
-  echo "error: BLE module is not present in $LOVE_DIR" >&2
-  echo "apply the vendor patches explicitly or keep developing in a patched vendor checkout before deploying" >&2
-  exit 1
-}
-
 package_demo_archives() {
   local demo_dir demo_name archive_root archive_path build_id
 
@@ -213,7 +203,7 @@ if [[ -n "$DEVICE_ID" && -z "$DEVELOPMENT_TEAM" ]]; then
 fi
 
 discover_demo_dirs
-require_ble_module
+
 
 if [[ ! -d "$XCODE_PROJECT" ]]; then
   echo "error: Xcode project not found: $XCODE_PROJECT" >&2
