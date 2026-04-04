@@ -95,6 +95,13 @@ end
 
 function M.draw_session(width, height, metrics)
   local display_name = require("game").display_name
+  local function player_label(peer_id, symbol)
+    local label = symbol .. " " .. display_name(peer_id)
+    if peer_id and network.peer_status(peer_id) == "reconnecting" then
+      label = label .. " (reconnecting)"
+    end
+    return label
+  end
   local bc = M.board_colors
   local x = metrics.margin
   local y = metrics.topbar_h + metrics.gap
@@ -144,8 +151,8 @@ function M.draw_session(width, height, metrics)
 
   love.graphics.setFont(fonts.small)
   local label_y = board_y + board_size + 8
-  local x_label = "X " .. display_name(game.players.X)
-  local o_label = "O " .. display_name(game.players.O)
+  local x_label = player_label(game.players.X, "X")
+  local o_label = player_label(game.players.O, "O")
   local sep = "     "
   local full = x_label .. sep .. o_label
   local full_w = fonts.small:getWidth(full)

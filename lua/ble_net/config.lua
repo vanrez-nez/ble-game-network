@@ -3,6 +3,7 @@ local M = {}
 M.defaults = {
   title = "BLE Demo Chat",
   room_name = "Demo Chat",
+  room_type = nil,
   max_clients = 4,
   debug_prefix = "[ble_net]",
   debug_enabled = true,
@@ -41,6 +42,7 @@ function M.resolve(opts)
     defaults = {
       title = pick_explicit(opts.title, pick_explicit(user_defaults.title, M.defaults.title)),
       room_name = pick_explicit(opts.room_name, pick_explicit(user_defaults.room_name, M.defaults.room_name)),
+      room_type = pick_explicit(opts.room_type, pick_explicit(user_defaults.room_type, M.defaults.room_type)),
       max_clients = pick_explicit(opts.max_clients, pick_explicit(user_defaults.max_clients, M.defaults.max_clients)),
       debug_prefix = pick_explicit(opts.debug_prefix, pick_explicit(user_defaults.debug_prefix, M.defaults.debug_prefix)),
       debug_enabled = pick_explicit(opts.debug_enabled, pick_explicit(user_defaults.debug_enabled, M.defaults.debug_enabled)),

@@ -51,6 +51,27 @@ function M.room_name(value)
   return normalized
 end
 
+function M.room_type(value)
+  local normalized, reason = M.non_empty_string(value)
+  if not normalized then
+    return nil, reason
+  end
+
+  if #normalized > 3 then
+    return nil, "too_long"
+  end
+
+  if normalized:find(":") then
+    return nil, "invalid_chars"
+  end
+
+  if has_control_characters(normalized) then
+    return nil, "invalid_chars"
+  end
+
+  return normalized:upper()
+end
+
 function M.room_id(value)
   local normalized, reason = M.non_empty_string(value)
   if not normalized then

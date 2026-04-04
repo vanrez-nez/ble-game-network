@@ -4,7 +4,8 @@ local diag = require("ble_diagnostics")
 
 local network = ble_net.new({
   title = "BLE Ping Pong",
-  room_name = "PingPong",
+  room_type = "P",
+  room_name = "Ping",
   max_clients = 6,
   debug_prefix = "[pingpong]",
 })
@@ -59,6 +60,14 @@ local function handle_event(ev)
     peers = {}
   elseif ev.type == "peer_left" then
     peers[ev.peer_id] = nil
+  elseif ev.type == "peer_status" then
+    local p = get_peer(ev.peer_id)
+    if ev.status == "reconnecting" then
+      p.flash_send = 0
+      p.flash_recv = 0
+    elseif ev.status == "connected" then
+      p.last_ping_sent = 0
+    end
   elseif ev.type == "session_ended" then
     peers = {}
   elseif ev.type == "message" then
@@ -119,7 +128,7 @@ function love.update(dt)
   local now = love.timer.getTime()
   for i = 1, #app.peers do
     local peer = app.peers[i]
-    if peer.peer_id ~= app.local_id then
+    if peer.peer_id ~= app.local_id and network.is_peer_connected(peer.peer_id) then
       local p = get_peer(peer.peer_id)
       if now - p.last_ping_sent >= PING_INTERVAL then
         send_ping(peer.peer_id)
@@ -161,6 +170,7 @@ local function draw_session(width, height, metrics)
   for i = 1, #peer_list do
     local peer = peer_list[i]
     local p = get_peer(peer.peer_id)
+    local peer_status = network.peer_status(peer.peer_id)
     local card_y = y + (i - 1) * (card_h + gap)
 
     -- Card background
@@ -194,7 +204,10 @@ local function draw_session(width, height, metrics)
 
     -- Latency
     love.graphics.setFont(fonts.small)
-    if p.latency then
+    if peer_status == "reconnecting" then
+      love.graphics.setColor(palette.accent)
+      love.graphics.print("reconnecting", x + w - 102, card_y + 12)
+    elseif p.latency then
       local ms = math.floor(p.latency * 1000)
       love.graphics.setColor(ms < 100 and palette.success or (ms < 500 and palette.accent or palette.danger))
       love.graphics.print(ms .. "ms", x + w - 60, card_y + 12)
@@ -210,12 +223,16 @@ local function draw_session(width, height, metrics)
     love.graphics.printf(labels, x + 12, card_y + 34, w - 24, "center")
 
     -- Heartbeat dot
-    local alive = (now - p.last_pong_recv) < (PING_INTERVAL * 2.5)
-    love.graphics.setColor(alive and palette.success or palette.danger)
+    local alive = peer_status ~= "reconnecting" and (now - p.last_pong_recv) < (PING_INTERVAL * 2.5)
+    love.graphics.setColor(peer_status == "reconnecting" and palette.accent or (alive and palette.success or palette.danger))
     love.graphics.circle("fill", x + w - 20, card_y + card_h - 16, 5)
 
     -- Last pong age
-    if p.last_pong_recv > 0 then
+    if peer_status == "reconnecting" then
+      love.graphics.setFont(fonts.small)
+      love.graphics.setColor(palette.dim)
+      love.graphics.print("Waiting to reconnect...", x + 12, card_y + card_h - 20)
+    elseif p.last_pong_recv > 0 then
       local age = now - p.last_pong_recv
       love.graphics.setFont(fonts.small)
       love.graphics.setColor(palette.dim)

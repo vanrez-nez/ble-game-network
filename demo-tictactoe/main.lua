@@ -7,7 +7,8 @@ local diag = require("ble_diagnostics")
 
 local network = ble_net.new({
   title = "BLE Tic-Tac-Toe",
-  room_name = "Tic-Tac-Toe",
+  room_type = "T",
+  room_name = "TicTac",
   max_clients = 6,
   debug_prefix = "[demo-tictactoe]",
 })

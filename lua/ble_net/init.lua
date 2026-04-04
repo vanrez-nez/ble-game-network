@@ -19,6 +19,17 @@ local M = {
   validation = validation,
 }
 
+local MAX_JOIN_ATTEMPTS = 3
+local RETRYABLE_JOIN_FAILURES = {
+  connection_failed = true,
+  connection_lost = true,
+  service_discovery_failed = true,
+  service_not_found = true,
+  characteristic_discovery_failed = true,
+  characteristic_not_found = true,
+  notification_enable_failed = true,
+}
+
 local function classify_diagnostic(msg)
   if not msg then return nil, nil end
   local s = tostring(msg)
@@ -108,6 +119,7 @@ local function default_state(title)
     is_host = false,
     busy = false,
     peer_statuses = {},
+    pending_join = nil,
   }
 end
 
@@ -119,6 +131,7 @@ function M.new(opts)
   local self = {}
   local state = default_state(settings.defaults.title)
   local room_name = validation.room_name(settings.defaults.room_name) or config.defaults.room_name
+  local room_type = settings.defaults.room_type and validation.room_type(settings.defaults.room_type) or nil
   local max_clients = validation.max_clients(settings.defaults.max_clients) or config.defaults.max_clients
   local debug_prefix = settings.defaults.debug_prefix
   local debug_enabled = settings.defaults.debug_enabled
@@ -126,6 +139,40 @@ function M.new(opts)
   local windows = settings.windows
   validation.set_limits(limits)
   local event_handler = nil
+
+  local function advertised_room_name()
+    if room_type then
+      return room_type .. ":" .. room_name
+    end
+    return room_name
+  end
+
+  local function decode_room_name(value)
+    local raw = tostring(value or "")
+    local tag, label = raw:match("^([A-Z0-9]+):(.*)$")
+    if tag then
+      if label == "" then
+        label = tag
+      end
+      return tag, label, raw
+    end
+    return nil, raw, raw
+  end
+
+  local function normalize_room(ev)
+    local tag, label, raw = decode_room_name(ev.name)
+    local room = {}
+
+    for k, v in pairs(ev) do
+      room[k] = v
+    end
+
+    room.room_type = tag
+    room.display_name = label
+    room.advertised_name = raw
+    room.visible = not room_type or tag == room_type
+    return room
+  end
 
   local notice_dedup = dedup.new({
     max_age = windows.notice_dedup_seconds,
@@ -154,8 +201,109 @@ function M.new(opts)
     return nil
   end
 
+  local function sync_peer_statuses(peers)
+    local statuses = {}
+    local roster = peers or {}
+
+    for i = 1, #roster do
+      local peer = roster[i]
+      if peer and peer.peer_id then
+        local status = peer.status or state.peer_statuses[peer.peer_id] or "connected"
+        peer.status = status
+        statuses[peer.peer_id] = status
+      end
+    end
+
+    state.peer_statuses = statuses
+  end
+
   local function set_roster(peers)
     state.peers = peers or {}
+    sync_peer_statuses(state.peers)
+  end
+
+  local function clear_pending_join()
+    state.pending_join = nil
+  end
+
+  local function clear_session_state()
+    state.peers = {}
+    state.messages = {}
+    state.session_id = nil
+    state.transport = nil
+    state.in_session = false
+    state.is_host = false
+    state.peer_statuses = {}
+    clear_pending_join()
+  end
+
+  local function is_retryable_join_failure(reason)
+    local text = tostring(reason or "")
+    local code = text:match("^([a-z_]+)")
+    if not code then
+      return false
+    end
+    return RETRYABLE_JOIN_FAILURES[code] == true
+  end
+
+  local function queue_join_attempt(join_ctx)
+    join_ctx.attempt = (join_ctx.attempt or 0) + 1
+    state.pending_join = join_ctx
+    state.busy = true
+
+    if join_ctx.attempt > 1 then
+      state.status = "Joining " .. join_ctx.room_label .. " (" .. join_ctx.attempt .. "/" .. MAX_JOIN_ATTEMPTS .. ")..."
+    else
+      state.status = "Joining " .. join_ctx.room_label .. "..."
+    end
+
+    debug_log("join room attempt " .. tostring(join_ctx.attempt) .. ": " .. tostring(join_ctx.room_id))
+    ble.join(join_ctx.room_id)
+  end
+
+  local function retry_pending_join(reason)
+    local join_ctx = state.pending_join
+    if not join_ctx or not is_retryable_join_failure(reason) then
+      return false
+    end
+    if (join_ctx.attempt or 0) >= MAX_JOIN_ATTEMPTS then
+      return false
+    end
+
+    local next_attempt = (join_ctx.attempt or 0) + 1
+    local text = "Retrying " .. join_ctx.room_label .. " (" .. next_attempt .. "/" .. MAX_JOIN_ATTEMPTS .. ")..."
+    self.push_notice(text)
+    alerts.push(text, palette.accent)
+    queue_join_attempt(join_ctx)
+    return true
+  end
+
+  local function peer_label(peer_id)
+    if peer_id == state.local_id then
+      return "You"
+    end
+    return peer_id or "Peer"
+  end
+
+  local function left_notice(reason, peer_id)
+    if reason == "left" then
+      return peer_id .. " left"
+    end
+    if reason == "timeout" then
+      return peer_id .. " disconnected"
+    end
+    return peer_id .. " left (" .. tostring(reason or "unknown") .. ")"
+  end
+
+  local function left_alert(reason, peer_id)
+    local name = peer_label(peer_id)
+    if reason == "left" then
+      return name .. " left the room", palette.danger
+    end
+    if reason == "timeout" then
+      return name .. " lost connection", palette.accent
+    end
+    return name .. " left the room", palette.danger
   end
 
   function self.transport_name(value)
@@ -173,12 +321,52 @@ function M.new(opts)
     return {}
   end
 
+  function self.peer_status(peer_id)
+    if not peer_id or peer_id == "" then
+      return "connected"
+    end
+
+    return state.peer_statuses[peer_id] or "connected"
+  end
+
+  function self.is_peer_connected(peer_id)
+    return self.peer_status(peer_id) ~= "reconnecting"
+  end
+
   function self.room_summary_text(room)
-    return self.transport_name(room.transport) .. "  |  peers " .. tostring(room.peer_count) .. "/" .. tostring(room.max)
+    local version_text = "v" .. tostring(room.proto_version or "?")
+    local summary = self.transport_name(room.transport) .. "  |  peers " .. tostring(room.peer_count) .. "/" .. tostring(room.max) .. "  |  " .. version_text
+    if room.incompatible then
+      summary = summary .. " incompatible"
+    end
+    return summary
   end
 
   function self.room_signal_text(room)
     return "RSSI " .. tostring(room.rssi)
+  end
+
+  function self.room_title_text(room)
+    return room.display_name or room.name or "Room"
+  end
+
+  function self.can_join_room(room)
+    if not room then
+      return false
+    end
+
+    if room_type and room.room_type ~= room_type then
+      return false
+    end
+
+    return not room.incompatible
+  end
+
+  function self.join_button_text(room)
+    if room and room.incompatible then
+      return "Incompatible"
+    end
+    return "Join Room"
   end
 
   function self.session_info_lines()
@@ -249,20 +437,14 @@ function M.new(opts)
     end
 
     if state.in_session and ble.peers then
-      state.peers = ble.peers() or {}
+      set_roster(ble.peers() or {})
     end
   end
 
   function self.reset_lobby()
     state.rooms = {}
-    state.peers = {}
-    state.messages = {}
-    state.session_id = nil
-    state.transport = nil
-    state.in_session = false
-    state.is_host = false
+    clear_session_state()
     state.busy = false
-    state.peer_statuses = {}
     notice_dedup:reset()
     message_dedup:reset()
     self.refresh_live_state()
@@ -281,7 +463,7 @@ function M.new(opts)
     state.status = "Starting host..."
     debug_log("host button pressed: " .. self.transport_name(resolved_transport))
     ble.host({
-      room = room_name,
+      room = advertised_room_name(),
       max = max_clients,
       transport = resolved_transport,
     })
@@ -303,10 +485,12 @@ function M.new(opts)
     end
 
     local room_label = validation.room_name(room_name) or resolved_room_id or "room"
-    state.busy = true
-    state.status = "Joining " .. room_label .. "..."
-    debug_log("join room: " .. tostring(resolved_room_id))
-    ble.join(resolved_room_id)
+    clear_session_state()
+    queue_join_attempt({
+      room_id = resolved_room_id,
+      room_label = room_label,
+      attempt = 0,
+    })
     return true
   end
 
@@ -381,11 +565,16 @@ function M.new(opts)
       }
     end
     if ev.type == "room_found" then
-      local idx = room_by_id(ev.room_id)
+      local room = normalize_room(ev)
+      if not room.visible then
+        return
+      end
+
+      local idx = room_by_id(room.room_id)
       if idx then
-        state.rooms[idx] = ev
+        state.rooms[idx] = room
       else
-        state.rooms[#state.rooms + 1] = ev
+        state.rooms[#state.rooms + 1] = room
       end
       state.status = "Found " .. tostring(#state.rooms) .. " room(s)"
 
@@ -396,6 +585,7 @@ function M.new(opts)
       end
 
     elseif ev.type == "hosted" then
+      clear_pending_join()
       state.busy = false
       state.in_session = true
       state.session_id = ev.session_id
@@ -407,6 +597,7 @@ function M.new(opts)
       alerts.push("You started hosting", palette.success)
 
     elseif ev.type == "joined" then
+      clear_pending_join()
       state.busy = false
       state.in_session = true
       state.session_id = ev.session_id
@@ -426,13 +617,13 @@ function M.new(opts)
     elseif ev.type == "peer_left" then
       set_roster(ev.peers)
       state.peer_statuses[ev.peer_id] = nil
-      self.push_notice(ev.peer_id .. " left (" .. ev.reason .. ")")
-      local name = ev.peer_id == state.local_id and "You" or ev.peer_id
-      alerts.push(name .. " left the room", palette.danger)
+      self.push_notice(left_notice(ev.reason, ev.peer_id))
+      local alert_text, alert_color = left_alert(ev.reason, ev.peer_id)
+      alerts.push(alert_text, alert_color)
 
     elseif ev.type == "peer_status" then
       state.peer_statuses[ev.peer_id] = ev.status
-      local name = ev.peer_id == state.local_id and "You" or ev.peer_id
+      local name = peer_label(ev.peer_id)
       if ev.status == "reconnecting" then
         self.push_notice(ev.peer_id .. " reconnecting...")
         alerts.push(name .. " reconnecting...", palette.accent)
@@ -464,9 +655,17 @@ function M.new(opts)
       self.push_notice("Session resumed on " .. ev.new_host_id)
 
     elseif ev.type == "join_failed" then
+      if retry_pending_join(ev.reason) then
+        self.refresh_live_state()
+        if event_handler then
+          event_handler(ev, self, state)
+        end
+        return
+      end
+      clear_session_state()
+      state.busy = false
       self.push_notice("Join rejected: " .. (ev.reason or "unknown"))
       alerts.push("Join rejected: " .. (ev.reason or "unknown"), palette.danger)
-      self.reset_lobby()
 
     elseif ev.type == "session_ended" then
       self.push_notice("Session ended: " .. ev.reason)
@@ -477,6 +676,19 @@ function M.new(opts)
       self.push_notice("Bluetooth state: " .. ev.state)
 
     elseif ev.type == "error" then
+      if ev.code == "join_failed" and retry_pending_join(ev.detail) then
+        self.refresh_live_state()
+        if event_handler then
+          event_handler(ev, self, state)
+        end
+        return
+      end
+      if ev.code == "join_failed" or not state.in_session then
+        clear_session_state()
+      end
+      if not state.in_session then
+        state.busy = false
+      end
       self.push_notice("Error: " .. ev.code .. " - " .. ev.detail)
 
     elseif ev.type == "diagnostic" then

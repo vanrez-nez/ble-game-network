@@ -38,6 +38,13 @@ function M.display_name(peer_id)
   return "Player"
 end
 
+local function peer_status(peer_id)
+  if not network or not network.peer_status then
+    return "connected"
+  end
+  return network.peer_status(peer_id)
+end
+
 local function board_copy(source)
   local copy = {}
   for i = 1, 9 do copy[i] = source[i] or "" end
@@ -82,9 +89,18 @@ local function describe_board_state()
   if not g.players.X and not g.players.O then return "Waiting for players..." end
   if not g.players.X then return "Waiting for Player X..." end
   if not g.players.O then return "Waiting for Player O..." end
+  if peer_status(g.players.X) == "reconnecting" then
+    return M.display_name(g.players.X) .. " reconnecting..."
+  end
+  if peer_status(g.players.O) == "reconnecting" then
+    return M.display_name(g.players.O) .. " reconnecting..."
+  end
   if g.winner == "draw" then return "Draw game." end
   if g.winner == "X" or g.winner == "O" then return M.display_name(g.players[g.winner]) .. " wins!" end
   if not g.players[g.turn] then return "Waiting for replacement..." end
+  if peer_status(g.players[g.turn]) == "reconnecting" then
+    return "Waiting for " .. M.display_name(g.players[g.turn]) .. " to reconnect..."
+  end
   return M.display_name(g.players[g.turn]) .. " to move."
 end
 

@@ -6,7 +6,8 @@ local diag = require("ble_diagnostics")
 
 local network = ble_net.new({
   title = "BLE Demo Chat",
-  room_name = "Demo Chat",
+  room_type = "C",
+  room_name = "Chat",
   max_clients = 4,
   debug_prefix = "[demo-chat]",
 })
@@ -128,11 +129,15 @@ local function draw_info_card(x, y, w, h)
   else
     for i = 1, visible_peers do
       local peer = app.peers[i]
+      local peer_status = network.peer_status(peer.peer_id)
       panel.draw(x + 16, row_y, w - 32, 26, 10, i % 2 == 0 and palette.panel or {0.13, 0.17, 0.21})
       love.graphics.setColor(palette.text)
       love.graphics.setFont(fonts.small)
       love.graphics.print(peer.peer_id, x + 26, row_y + 6)
-      if peer.is_host then
+      if peer_status == "reconnecting" then
+        love.graphics.setColor(palette.accent)
+        love.graphics.print("reconnecting", x + w - 124, row_y + 6)
+      elseif peer.is_host then
         love.graphics.setColor(palette.accent_soft)
         love.graphics.print("host", x + w - 64, row_y + 6)
       end
