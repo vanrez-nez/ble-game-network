@@ -1,5 +1,7 @@
 # BLE Game Network
 
+![BLE Game Network banner](./banner_art.jpg)
+
 ## Project
 
 This repo contains a BLE communication layer for LÖVE.
